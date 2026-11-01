@@ -81,7 +81,8 @@ class StorageService:
             cleaned = cleaned.lstrip("/")
         if cleaned.startswith("../") or "//" in cleaned:
             raise ValueError("destination_name contains an invalid path.")
-    return cleaned
+
+        return cleaned
 
     @staticmethod
     def _validate_file_object(file_object: BinaryIO) -> None:
@@ -157,7 +158,7 @@ class StorageService:
             gs_url=f"gs://{self._bucket.name}/{normalised_destination}",
         )
         logger.info("Upload successful -- gs_url=%s", result.gs_url)
-    return result
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +176,6 @@ def get_storage_service() -> StorageService:
     Returns:
         A singleton StorageService.
     """
-return StorageService()
+    return StorageService()
 
 
