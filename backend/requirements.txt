@@ -1,0 +1,17 @@
+# FastAPI
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Configuration and validation
+pydantic
+pydantic-settings
+python-dotenv
+
+# Google Cloud
+google-cloud-storage
+google-cloud-aiplatform
+google-cloud-secret-manager
+
+# HTTP
+httpx

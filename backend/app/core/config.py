@@ -1,7 +1,7 @@
-
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,29 +11,60 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
 
     # Application
-    app_name: str = "Enterprise RAG API"
-    app_env: str = "development"
-    debug: bool = False
+    app_name: str = Field(
+        default="Enterprise RAG API",
+        validation_alias=AliasChoices("APP_NAME", "app_name"),
+    )
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "app_env"),
+    )
+    debug: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("DEBUG", "debug"),
+    )
 
     # GCP
-    gcp_project_id: str
-    gcp_region: str = "asia-south1"
+    gcp_project_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("GCP_PROJECT_ID", "gcp_project_id"),
+    )
+    gcp_region: str = Field(
+        default="asia-south1",
+        validation_alias=AliasChoices("GCP_REGION", "gcp_region"),
+    )
 
     # Storage
-    gcs_document_bucket: str
+    gcs_document_bucket: str = Field(
+        default="",
+        validation_alias=AliasChoices("GCS_DOCUMENT_BUCKET", "GCP_DOCUMENT_BUCKET", "gcs_document_bucket"),
+    )
 
     # AI
-    vertex_ai_enabled: bool = True
-    llm_provider: str = "vertex_ai"
+    vertex_ai_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("VERTEX_AI_ENABLED", "vertex_ai_enabled"),
+    )
+    llm_provider: str = Field(
+        default="vertex_ai",
+        validation_alias=AliasChoices("LLM_PROVIDER", "llm_provider"),
+    )
 
     # Vector database
-    qdrant_url: str = ""
-    qdrant_api_key: str = ""
+    qdrant_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("QDRANT_URL", "qdrant_url"),
+    )
+    qdrant_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("QDRANT_API_KEY", "qdrant_api_key"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        case_sensitive=False,
     )
 
 
