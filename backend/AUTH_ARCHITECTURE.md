@@ -154,7 +154,7 @@ Two sub-paths exist:
 
 ### Mode: `local` — Service-Account JSON Key (Local Development Only)
 
-Local development reads a service-account JSON key from `GCP_CREDENTIAL_FILE` (relative paths resolve from `backend/`). No `gcloud` login is needed, and the identity is explicit and reproducible.
+By default (`GCP_CREDENTIAL_FILE` empty) local development uses your own `gcloud auth application-default login` identity, so no key file exists on disk. Combine it with `GCP_IMPERSONATE_SERVICE_ACCOUNT` so calls run as a low-privilege dev service account. Optionally, set `GCP_CREDENTIAL_FILE` to a service-account JSON key (relative paths resolve from `backend/`).
 
 > **WARNING: `local` is rejected in `production`, `staging`, `prod` and `stage` environments** (enforced in `_validate_auth_config()`; the production settings validator additionally requires `wif`).
 
@@ -399,3 +399,7 @@ All `.env.*` files except `.env.example` are gitignored. `docker-compose.yml` lo
 - **No long-lived keys:** production uses WIF; `local` is rejected for staging/production.
 - **Reduced surface:** `/docs`, `/redoc` and `/openapi.json` are disabled, and `GET /` does not expose project details in production.
 - **Open items:** `backend/secrets/wif-credentials.json` should be removed from git history and mounted as a secret; dependencies are unpinned; the upload endpoint has no authentication yet.
+
+### Local development with impersonation
+
+In \.env.local\, \GCP_IMPERSONATE_SERVICE_ACCOUNT=svc-rag-dev@<project>.iam.gserviceaccount.com\ makes the local key act as a dedicated low-privilege dev service account. Required one-time IAM setup: the identity in \GCP_CREDENTIAL_FILE\ needs \oles/iam.serviceAccountTokenCreator\ on \svc-rag-dev\, and \svc-rag-dev\ needs only the storage/Vertex AI roles the app uses. The IAM Service Account Credentials API must be enabled.

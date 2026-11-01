@@ -9,9 +9,13 @@ wif   - Workload Identity Federation (required in production / staging).
           b) GCP_WIF_PROVIDER + GCP_WIF_SERVICE_ACCOUNT - identity attached to
              the runtime (Cloud Run / GKE).
 
-local - Local development only. Uses the service-account JSON key referenced
-        by GCP_CREDENTIAL_FILE (relative paths resolve from backend/).
-        No gcloud login required. Rejected in production / staging.
+local - Local development only. Rejected in production / staging.
+          a) GCP_CREDENTIAL_FILE empty (default) - uses your own
+             ``gcloud auth application-default login`` identity; no key file.
+             Combine with GCP_IMPERSONATE_SERVICE_ACCOUNT so calls run as a
+             low-privilege dev service account.
+          b) GCP_CREDENTIAL_FILE set - uses that service-account JSON key
+             (relative paths resolve from backend/).
 
 The mode is controlled by GCP_AUTH_MODE (default: "wif").
 """
@@ -75,7 +79,7 @@ def _validate_auth_config(settings) -> None:
     * ``GCP_PROJECT_ID`` is always required.
     * ``GCP_AUTH_MODE`` must be ``"wif"`` or ``"local"`` (case-insensitive).
     * ``"local"`` is rejected in production / staging environments.
-    * ``"local"`` requires ``GCP_CREDENTIAL_FILE``.
+    * ``"local"`` uses ``GCP_CREDENTIAL_FILE`` if set, otherwise gcloud login.
     * ``"wif"`` requires at least one of:
         - ``GCP_WIF_CREDENTIAL_FILE`` (path to an external-account JSON file), **or**
         - both ``GCP_WIF_PROVIDER`` **and** ``GCP_WIF_SERVICE_ACCOUNT``.
@@ -97,12 +101,6 @@ def _validate_auth_config(settings) -> None:
         raise RuntimeError(
             "GCP_AUTH_MODE=local is not allowed in production or staging environments. "
             "Set GCP_AUTH_MODE=wif and supply WIF credentials."
-        )
-
-    if auth_mode == "local" and not (settings.gcp_credential_file or "").strip():
-        raise RuntimeError(
-            "GCP_AUTH_MODE=local requires GCP_CREDENTIAL_FILE "
-            "(path to a service-account JSON key)."
         )
 
     # ---- WIF-specific validation -------------------------------------------
@@ -165,7 +163,8 @@ def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
     -------------------------------------------------------
     1. WIF credential file  â€“ ``GCP_WIF_CREDENTIAL_FILE`` is set.
     2. WIF provider flow    â€“ ``GCP_WIF_PROVIDER`` + ``GCP_WIF_SERVICE_ACCOUNT``.
-    3. Local (dev only)     - GCP_AUTH_MODE=local + GCP_CREDENTIAL_FILE; rejected in prod/staging.
+    3. Local (dev only)     - GCP_AUTH_MODE=local; gcloud login or GCP_CREDENTIAL_FILE;
+                              rejected in prod/staging.
 
     Raises:
         RuntimeError: If the configuration is invalid or credentials cannot
@@ -234,9 +233,24 @@ def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
             "or both GCP_WIF_PROVIDER and GCP_WIF_SERVICE_ACCOUNT."
         )
 
-    # ---- Path 3: local service-account JSON (development only) ------------
+    # ---- Path 3: local development only ------------------------------------
     if auth_mode == "local":
-        key_path = Path(settings.gcp_credential_file.strip())
+        raw_path = (settings.gcp_credential_file or "").strip()
+
+        # 3a: no key file -> developer's own gcloud login (no secret on disk)
+        if not raw_path:
+            try:
+                credentials, project_id = google_default(scopes=resolved_scopes)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"No GCP_CREDENTIAL_FILE set and gcloud login not found: {exc}. "
+                    "Run 'gcloud auth application-default login'."
+                ) from exc
+            logger.info("Using local gcloud login -- project=%s", project_id)
+            return _apply_impersonation_if_needed(credentials, settings, resolved_scopes)
+
+        # 3b: service-account JSON key
+        key_path = Path(raw_path)
         if not key_path.is_absolute():
             key_path = BACKEND_ROOT / key_path
         if not key_path.exists():

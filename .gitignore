@@ -34,3 +34,7 @@ dist/
 .vscode/
 .idea/
 /app/infrastructure/terraform/.terraform.lock.hcl
+
+-/Lib/
+-/Scripts/
+environment/
