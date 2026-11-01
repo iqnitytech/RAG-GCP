@@ -4,8 +4,8 @@ from functools import lru_cache
 from io import IOBase
 from typing import BinaryIO
 from google.cloud import storage
-from google.cloud.exceptions import GoogleCloudError
 
+from app.auth.gcp import get_gcp_credentials
 from app.core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -61,12 +61,17 @@ class StorageService:
             raise StorageServiceError("GCS document bucket is not configured.")
 
         try:
-            self._client = storage.Client(project=resolved_settings.gcp_project_id)
+            credentials = get_gcp_credentials()
+            self._client = storage.Client(
+                project=resolved_settings.gcp_project_id,
+                credentials=credentials,
+            )
             self._bucket = self._client.bucket(resolved_settings.gcs_document_bucket)
             logger.info(
-                "StorageService initialised -- bucket=%s project=%s",
+                "StorageService initialised -- bucket=%s project=%s auth_mode=%s",
                 resolved_settings.gcs_document_bucket,
                 resolved_settings.gcp_project_id,
+                resolved_settings.gcp_auth_mode,
             )
         except Exception as exc:  # pragma: no cover - defensive guard around GCP client init
             raise StorageServiceError(

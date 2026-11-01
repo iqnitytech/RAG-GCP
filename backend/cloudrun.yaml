@@ -1,0 +1,54 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: rag-gcp-backend
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/PROJECT_ID/rag-gcp-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http1
+              containerPort: 8000
+          env:
+            - name: APP_NAME
+              value: Enterprise RAG API
+            - name: APP_ENV
+              value: production
+            - name: DEBUG
+              value: "false"
+            - name: GCP_PROJECT_ID
+              value: PROJECT_ID
+            - name: GCP_REGION
+              value: asia-south1
+            - name: GCP_AUTH_MODE
+              value: wif
+            - name: GCP_WIF_PROVIDER
+              value: projects/123456789012/locations/global/workloadIdentityPools/rag-pool/providers/rag-provider
+            - name: GCP_WIF_SERVICE_ACCOUNT
+              value: svc-rag@PROJECT_ID.iam.gserviceaccount.com
+            - name: GCP_IMPERSONATE_SERVICE_ACCOUNT
+              value: svc-rag@PROJECT_ID.iam.gserviceaccount.com
+            - name: GCS_DOCUMENT_BUCKET
+              value: PROJECT_ID-rag-documents
+            - name: VERTEX_AI_ENABLED
+              value: "true"
+            - name: LLM_PROVIDER
+              value: vertex_ai
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "250m"
+              memory: 256Mi

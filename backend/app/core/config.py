@@ -33,6 +33,45 @@ class Settings(BaseSettings):
         default="asia-south1",
         validation_alias=AliasChoices("GCP_REGION", "gcp_region"),
     )
+    gcp_auth_mode: str = Field(
+        default="wif",
+        validation_alias=AliasChoices("GCP_AUTH_MODE", "gcp_auth_mode"),
+    )
+    gcp_wif_provider: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GCP_WIF_PROVIDER",
+            "gcp_wif_provider",
+        ),
+    )
+    gcp_wif_service_account: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GCP_WIF_SERVICE_ACCOUNT",
+            "gcp_wif_service_account",
+        ),
+    )
+    gcp_wif_credential_file: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GCP_WIF_CREDENTIAL_FILE",
+            "gcp_wif_credential_file",
+        ),
+    )
+    gcp_impersonate_service_account: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GCP_IMPERSONATE_SERVICE_ACCOUNT",
+            "gcp_impersonate_service_account",
+        ),
+    )
+    gcp_default_scopes: str = Field(
+        default="https://www.googleapis.com/auth/cloud-platform",
+        validation_alias=AliasChoices(
+            "GCP_DEFAULT_SCOPES",
+            "gcp_default_scopes",
+        ),
+    )
 
     # Storage
     gcs_document_bucket: str = Field(

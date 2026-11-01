@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-gcp-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      APP_NAME: Enterprise RAG API
+      DEBUG: "true"
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-your-gcp-project-id}
+      GCP_REGION: ${GCP_REGION:-asia-south1}
+      GCP_AUTH_MODE: ${GCP_AUTH_MODE:-wif}
+      GCP_WIF_PROVIDER: ${GCP_WIF_PROVIDER:-}
+      GCP_WIF_SERVICE_ACCOUNT: ${GCP_WIF_SERVICE_ACCOUNT:-}
+      GCS_DOCUMENT_BUCKET: ${GCS_DOCUMENT_BUCKET:-your-gcp-project-id-rag-documents}
+      VERTEX_AI_ENABLED: "true"
+      LLM_PROVIDER: vertex_ai
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
