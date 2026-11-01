@@ -1,6 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Environment
 .env
 .env.*
 !.env.example
-.venv/
-__pycache__/
-*.pyc
+
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/terraform.tfvars
+**/crash.log
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+/app/infrastructure/terraform/.terraform.lock.hcl
