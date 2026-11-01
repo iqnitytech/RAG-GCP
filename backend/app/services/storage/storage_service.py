@@ -6,7 +6,8 @@ from typing import BinaryIO
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
 
-from app.core.config import settings
+from app.core.config import Settings, get_settings
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -43,24 +44,29 @@ class UploadResult:
 class StorageService:
     """Thin wrapper around the GCS client scoped to the configured bucket."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         """Initialise the GCS client and resolve the target bucket.
+
+        Args:
+            settings: App settings used to resolve the configured project and bucket.
 
         Raises:
             StorageServiceError: If the GCS client or bucket cannot be created.
         """
-        if not settings.gcp_project_id:
+        resolved_settings = settings or get_settings()
+
+        if not resolved_settings.gcp_project_id:
             raise StorageServiceError("GCP project ID is not configured.")
-        if not settings.gcs_document_bucket:
+        if not resolved_settings.gcs_document_bucket:
             raise StorageServiceError("GCS document bucket is not configured.")
 
         try:
-            self._client = storage.Client(project=settings.gcp_project_id)
-            self._bucket = self._client.bucket(settings.gcs_document_bucket)
+            self._client = storage.Client(project=resolved_settings.gcp_project_id)
+            self._bucket = self._client.bucket(resolved_settings.gcs_document_bucket)
             logger.info(
                 "StorageService initialised -- bucket=%s project=%s",
-                settings.gcs_document_bucket,
-                settings.gcp_project_id,
+                resolved_settings.gcs_document_bucket,
+                resolved_settings.gcp_project_id,
             )
         except Exception as exc:  # pragma: no cover - defensive guard around GCP client init
             raise StorageServiceError(
@@ -170,12 +176,13 @@ def get_storage_service() -> StorageService:
     """Return a cached StorageService instance.
 
     The service is created lazily on first use and then reused for the
-    lifetime of the process. FastAPI can inject this via ``Depends()`` and
-    tests can override it cleanly.
+    lifetime of the process. This keeps the expensive GCS client creation
+    in one place while allowing callers to inject explicit settings when
+    needed for tests or dependency wiring.
 
     Returns:
         A singleton StorageService.
     """
-    return StorageService()
+    return StorageService(get_settings())
 
 

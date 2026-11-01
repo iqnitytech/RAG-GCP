@@ -3,7 +3,8 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.services.storage.storage_service import StorageService, get_storage_service
+from app.dependencies import get_storage_service_dependency
+from app.services.storage.storage_service import StorageService
 
 
 router = APIRouter(
@@ -18,7 +19,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 @router.post("/upload", status_code=201)
 def upload_document(
     file: UploadFile = File(...),
-    storage_service: StorageService = Depends(get_storage_service),
+    storage_service: StorageService = Depends(get_storage_service_dependency),
 ):
     if file.filename is None or not file.filename.strip():
         raise HTTPException(status_code=400, detail="Filename is required")
