@@ -12,6 +12,7 @@ ENV/
 .env
 .env.*
 !.env.example
+backend/secrets/
 
 # Local virtual environments
 virtual/

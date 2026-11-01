@@ -16,10 +16,15 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         description="Enterprise Retrieval Augmented Generation API.",
         version="1.0.0",
+        docs_url=None if settings.is_production else "/docs",
+        redoc_url=None if settings.is_production else "/redoc",
+        openapi_url=None if settings.is_production else "/openapi.json",
     )
 
     @app.get("/")
     async def read_root():
+        if settings.is_production:
+            return {"message": "Enterprise RAG API is running!"}
         return {
             "message": "Enterprise RAG API is running!",
             "environment": settings.app_env,

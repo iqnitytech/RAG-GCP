@@ -3,29 +3,30 @@ GCP authentication module.
 
 Supported authentication modes
 --------------------------------
-wif   – Workload Identity Federation (required in production / staging).
+wif   - Workload Identity Federation (required in production / staging).
         Two sub-paths:
-          a) GCP_WIF_CREDENTIAL_FILE – an external-account JSON key file.
-          b) GCP_WIF_PROVIDER + GCP_WIF_SERVICE_ACCOUNT – ADC-style WIF flow.
+          a) GCP_WIF_CREDENTIAL_FILE - an external-account JSON file.
+          b) GCP_WIF_PROVIDER + GCP_WIF_SERVICE_ACCOUNT - identity attached to
+             the runtime (Cloud Run / GKE).
 
-adc   – Application Default Credentials (allowed only in non-production
-        environments; suitable for local developer machines that have run
-        ``gcloud auth application-default login``).
+local - Local development only. Uses the service-account JSON key referenced
+        by GCP_CREDENTIAL_FILE (relative paths resolve from backend/).
+        No gcloud login required. Rejected in production / staging.
 
-The mode is controlled by the GCP_AUTH_MODE environment variable (default: "wif").
-In production / staging environments, "adc" is explicitly rejected.
+The mode is controlled by GCP_AUTH_MODE (default: "wif").
 """
 
 import logging
 import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Iterable
 
 from google.auth import default as google_default
 from google.auth import impersonated_credentials
 from google.auth import load_credentials_from_file
 
-from app.core.config import get_settings
+from app.core.config import BACKEND_ROOT, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +73,9 @@ def _validate_auth_config(settings) -> None:
     Rules
     -----
     * ``GCP_PROJECT_ID`` is always required.
-    * ``GCP_AUTH_MODE`` must be ``"wif"`` or ``"adc"`` (case-insensitive).
-    * ``"adc"`` is rejected in production / staging environments.
+    * ``GCP_AUTH_MODE`` must be ``"wif"`` or ``"local"`` (case-insensitive).
+    * ``"local"`` is rejected in production / staging environments.
+    * ``"local"`` requires ``GCP_CREDENTIAL_FILE``.
     * ``"wif"`` requires at least one of:
         - ``GCP_WIF_CREDENTIAL_FILE`` (path to an external-account JSON file), **or**
         - both ``GCP_WIF_PROVIDER`` **and** ``GCP_WIF_SERVICE_ACCOUNT``.
@@ -85,16 +87,22 @@ def _validate_auth_config(settings) -> None:
 
     # ---- auth mode ---------------------------------------------------------
     auth_mode = (settings.gcp_auth_mode or "wif").lower().strip()
-    if auth_mode not in {"wif", "adc"}:
+    if auth_mode not in {"wif", "local"}:
         raise RuntimeError(
-            f"GCP_AUTH_MODE must be 'wif' or 'adc', got '{auth_mode}'."
+            f"GCP_AUTH_MODE must be 'wif' or 'local', got '{auth_mode}'."
         )
 
-    # ---- production guard: ADC is not allowed in prod/staging --------------
-    if auth_mode == "adc" and _is_production_environment(settings):
+    # ---- production guard: local key files are not allowed in prod/staging -
+    if auth_mode == "local" and _is_production_environment(settings):
         raise RuntimeError(
-            "ADC authentication is not allowed in production or staging environments. "
+            "GCP_AUTH_MODE=local is not allowed in production or staging environments. "
             "Set GCP_AUTH_MODE=wif and supply WIF credentials."
+        )
+
+    if auth_mode == "local" and not (settings.gcp_credential_file or "").strip():
+        raise RuntimeError(
+            "GCP_AUTH_MODE=local requires GCP_CREDENTIAL_FILE "
+            "(path to a service-account JSON key)."
         )
 
     # ---- WIF-specific validation -------------------------------------------
@@ -145,7 +153,7 @@ def _apply_impersonation_if_needed(credentials, settings, scopes: list[str]):
     return impersonated
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
 def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
     """
     Return GCP credentials for the configured authentication mode.
@@ -155,9 +163,9 @@ def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
 
     Authentication paths (in priority order for wif mode)
     -------------------------------------------------------
-    1. WIF credential file  – ``GCP_WIF_CREDENTIAL_FILE`` is set.
-    2. WIF provider flow    – ``GCP_WIF_PROVIDER`` + ``GCP_WIF_SERVICE_ACCOUNT``.
-    3. ADC (dev only)       – ``GCP_AUTH_MODE=adc``; rejected in prod/staging.
+    1. WIF credential file  â€“ ``GCP_WIF_CREDENTIAL_FILE`` is set.
+    2. WIF provider flow    â€“ ``GCP_WIF_PROVIDER`` + ``GCP_WIF_SERVICE_ACCOUNT``.
+    3. Local (dev only)     - GCP_AUTH_MODE=local + GCP_CREDENTIAL_FILE; rejected in prod/staging.
 
     Raises:
         RuntimeError: If the configuration is invalid or credentials cannot
@@ -199,14 +207,14 @@ def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
                     f"'{wif_credential_file}': {exc}"
                 ) from exc
 
-        # Sub-path 1b: WIF provider + service account via ADC discovery
+        # Sub-path 1b: WIF provider + service account via the runtime-attached identity
         wif_provider = (settings.gcp_wif_provider or "").strip()
         wif_service_account = (settings.gcp_wif_service_account or "").strip()
         if wif_provider and wif_service_account:
             try:
                 credentials, project_id = google_default(scopes=resolved_scopes)
                 logger.info(
-                    "Loaded WIF credentials via ADC -- provider=%s "
+                    "Loaded WIF credentials via attached identity -- provider=%s "
                     "service_account=%s project=%s",
                     wif_provider,
                     wif_service_account,
@@ -226,20 +234,25 @@ def get_gcp_credentials(scopes: tuple[str, ...] | None = None):
             "or both GCP_WIF_PROVIDER and GCP_WIF_SERVICE_ACCOUNT."
         )
 
-    # ---- Path 3: ADC (development only) ------------------------------------
-    if auth_mode == "adc":
-        try:
-            credentials, project_id = google_default(scopes=resolved_scopes)
-            logger.info(
-                "Using Application Default Credentials (ADC) -- project=%s",
-                project_id,
+    # ---- Path 3: local service-account JSON (development only) ------------
+    if auth_mode == "local":
+        key_path = Path(settings.gcp_credential_file.strip())
+        if not key_path.is_absolute():
+            key_path = BACKEND_ROOT / key_path
+        if not key_path.exists():
+            raise RuntimeError(
+                f"GCP_CREDENTIAL_FILE points to a missing file: '{key_path}'"
             )
-            return _apply_impersonation_if_needed(credentials, settings, resolved_scopes)
+        try:
+            credentials, project_id = load_credentials_from_file(
+                str(key_path), scopes=resolved_scopes
+            )
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to obtain Application Default Credentials: {exc}. "
-                "Run 'gcloud auth application-default login' to set up ADC."
+                f"Failed to load credentials from '{key_path}': {exc}"
             ) from exc
+        logger.info("Using local credential file -- project=%s", project_id)
+        return _apply_impersonation_if_needed(credentials, settings, resolved_scopes)
 
     # Unreachable: _validate_auth_config already rejects unknown modes.
     raise RuntimeError(f"Unrecognised GCP_AUTH_MODE: '{auth_mode}'.")  # pragma: no cover

@@ -45,6 +45,14 @@ spec:
               value: "true"
             - name: LLM_PROVIDER
               value: vertex_ai
+            - name: QDRANT_URL
+              value: https://QDRANT_HOST:6333
+            # Secret from Secret Manager (grant roles/secretmanager.secretAccessor).
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-api-key
+                  key: latest
           resources:
             limits:
               cpu: "1"
