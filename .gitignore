@@ -2,12 +2,20 @@
 __pycache__/
 *.py[cod]
 .venv/
+venv/
+env/
+ENV/
 .pytest_cache/
+*.log
 
 # Environment
 .env
 .env.*
 !.env.example
+
+# Local virtual environments
+virtual/
+.environment/
 
 # Terraform
 **/.terraform/
