@@ -403,3 +403,14 @@ All `.env.*` files except `.env.example` are gitignored. `docker-compose.yml` lo
 ### Local development with impersonation
 
 In \.env.local\, \GCP_IMPERSONATE_SERVICE_ACCOUNT=svc-rag-dev@<project>.iam.gserviceaccount.com\ makes the local key act as a dedicated low-privilege dev service account. Required one-time IAM setup: the identity in \GCP_CREDENTIAL_FILE\ needs \oles/iam.serviceAccountTokenCreator\ on \svc-rag-dev\, and \svc-rag-dev\ needs only the storage/Vertex AI roles the app uses. The IAM Service Account Credentials API must be enabled.
+
+---
+
+## 13. Upload API (production behaviour)
+
+- \POST /documents/upload\ is async; the blocking GCS call runs in a worker thread (\un_in_threadpool\).
+- Authentication: header \X-API-Key\ checked in constant time against \API_KEY\ (Secret Manager in production, required at startup).
+- Validation: 10 MB limit (Content-Length pre-check plus exact size), extension allow-list, magic-byte check, sanitised object name, content type derived server-side.
+- GCS: uploads never overwrite (\if_generation_match=0\), are retry-safe, and time out after 120 s.
+- Errors: storage failures return a generic 503 (details only in server logs); no internal messages leak to clients.
+- Probes: \/health\ (liveness, no external calls) and \/ready\ (bucket reachable). The GCS client is warmed up at startup (fail-fast in production) and closed on shutdown.

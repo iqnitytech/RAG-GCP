@@ -3,12 +3,17 @@ from dataclasses import dataclass
 from functools import lru_cache
 from io import IOBase
 from typing import BinaryIO
+
 from google.cloud import storage
 
 from app.auth.gcp import get_gcp_credentials
 from app.core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+# Seconds. Bounded so a stuck GCS call can never hang a worker forever.
+UPLOAD_TIMEOUT_SECONDS = 120
+PING_TIMEOUT_SECONDS = 5
 
 # ---------------------------------------------------------------------------
 # Custom exception
@@ -114,6 +119,7 @@ class StorageService:
         file_object: BinaryIO,
         destination_name: str,
         content_type: str,
+        metadata: dict[str, str] | None = None,
     ) -> UploadResult:
         """Upload a binary file-like object to GCS.
 
@@ -122,6 +128,7 @@ class StorageService:
             destination_name: The object key (path) inside the bucket.
                 Must be a non-empty string.
             content_type: MIME type of the file (e.g. ``"application/pdf"``).
+            metadata: Optional custom object metadata (e.g. original filename).
 
         Returns:
             An UploadResult containing the bucket name, object key,
@@ -147,10 +154,17 @@ class StorageService:
 
         try:
             blob = self._bucket.blob(normalised_destination)
+            if metadata:
+                blob.metadata = metadata
+            # if_generation_match=0 -> never overwrite an existing object, and it
+            # makes the upload safe for the client library to retry on transient
+            # errors. The timeout bounds every attempt.
             blob.upload_from_file(
                 file_object,
                 rewind=True,
                 content_type=resolved_content_type,
+                if_generation_match=0,
+                timeout=UPLOAD_TIMEOUT_SECONDS,
             )
         except Exception as exc:
             logger.exception(
@@ -170,6 +184,19 @@ class StorageService:
         )
         logger.info("Upload successful -- gs_url=%s", result.gs_url)
         return result
+
+
+    def ping(self) -> bool:
+        """Return True if the configured bucket is reachable (readiness probe)."""
+        try:
+            return bool(self._bucket.exists(timeout=PING_TIMEOUT_SECONDS))
+        except Exception:
+            logger.exception("Bucket readiness check failed")
+            return False
+
+    def close(self) -> None:
+        """Release the underlying HTTP session."""
+        self._client.close()
 
 
 # ---------------------------------------------------------------------------

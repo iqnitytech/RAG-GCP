@@ -124,6 +124,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("QDRANT_API_KEY", "qdrant_api_key"),
     )
 
+    # Secret: shared API key for the X-API-Key header. Mandatory in production.
+    api_key: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("API_KEY", "api_key"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=resolve_env_file(),
         env_file_encoding="utf-8",
@@ -156,6 +162,8 @@ class Settings(BaseSettings):
                 "QDRANT_API_KEY must be injected by the runtime "
                 "(Secret Manager -> env var), not stored in a file"
             )
+        if not self.api_key.get_secret_value():
+            problems.append("API_KEY must be injected by the runtime (Secret Manager)")
         if problems:
             raise ValueError("Invalid production configuration: " + "; ".join(problems))
         return self

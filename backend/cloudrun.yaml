@@ -53,6 +53,19 @@ spec:
                 secretKeyRef:
                   name: qdrant-api-key
                   key: latest
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-api-key
+                  key: latest
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
           resources:
             limits:
               cpu: "1"
