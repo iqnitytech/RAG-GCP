@@ -5,6 +5,7 @@ from io import IOBase
 from typing import BinaryIO
 
 from google.cloud import storage
+from sdk.errors import ServiceUnavailableError
 
 from app.auth.gcp import get_gcp_credentials
 from app.core.config import Settings, get_settings
@@ -19,8 +20,10 @@ PING_TIMEOUT_SECONDS = 5
 # Custom exception
 # ---------------------------------------------------------------------------
 
-class StorageServiceError(RuntimeError):
-    """Raised when a GCS operation fails."""
+class StorageServiceError(ServiceUnavailableError):
+    """Raised when a GCS operation fails (clients see a generic 503)."""
+
+    public_message = "Storage service is temporarily unavailable"
 
 # ---------------------------------------------------------------------------
 # Typed return value

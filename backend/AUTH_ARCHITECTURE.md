@@ -427,3 +427,23 @@ app/models/
     document_upload.py                      # DocumentUploadResponse, StorageInfo
 ```  
 Add a new endpoint by adding one request file, one validation file named after it, and one response file.
+
+---
+
+## 14. Shared SDK (`backend/sdk/`)
+
+Framework-level code lives in `sdk/` and never imports from `app/`; the app injects its settings. `app/auth/gcp.py`, `app/core/security.py` and `app/core/rate_limit.py` are now thin bindings to the SDK.
+
+| SDK module | Provides |
+|---|---|
+| `sdk.auth.gcp` | `build_gcp_credentials(settings, scopes, base_dir)`: the WIF / local / impersonation engine (section 4-5) |
+| `sdk.auth.api_key` | `make_api_key_dependency(key_getter)`: constant-time `X-API-Key` check |
+| `sdk.schemas` | Generic `ApiResponse[T]`, `Page[T]`, `ErrorResponse`, `HealthResponse`, `PageParams` |
+| `sdk.logging` | `configure_logging` (JSON in production), request-id context and filter |
+| `sdk.middleware` | `RequestContextMiddleware` (X-Request-ID + access log), `SecurityHeadersMiddleware` |
+| `sdk.errors` | `AppError` hierarchy and handlers: clients get public messages plus request id, never internals |
+| `sdk.ratelimit` | `RateLimiter(limit_getter)` dependency |
+| `sdk.health` | `/health` (liveness) and `/ready` (readiness) routes |
+| `sdk.app_factory` | `create_base_app(...)` wires everything above in one call |
+
+`app/main.py` now calls `create_base_app(...)` and only adds app-specific routes and lifespan. `StorageServiceError` subclasses `ServiceUnavailableError`, so it is returned as a generic 503 automatically. The SDK can be reused by another service by copying the folder or installing it with its `pyproject.toml`.
