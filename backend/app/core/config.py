@@ -129,6 +129,12 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("API_KEY", "api_key"),
     )
+    # Per-process requests/minute per caller; 0 disables rate limiting.
+    rate_limit_per_minute: int = Field(
+        default=60,
+        ge=0,
+        validation_alias=AliasChoices("RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=resolve_env_file(),

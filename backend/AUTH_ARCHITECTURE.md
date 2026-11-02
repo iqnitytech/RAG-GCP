@@ -414,3 +414,16 @@ In \.env.local\, \GCP_IMPERSONATE_SERVICE_ACCOUNT=svc-rag-dev@<project>.iam.gser
 - GCS: uploads never overwrite (\if_generation_match=0\), are retry-safe, and time out after 120 s.
 - Errors: storage failures return a generic 503 (details only in server logs); no internal messages leak to clients.
 - Probes: \/health\ (liveness, no external calls) and \/ready\ (bucket reachable). The GCS client is warmed up at startup (fail-fast in production) and closed on shutdown.
+
+### Upload models layout
+
+```text
+app/models/
+  request/
+    document_upload.py                      # DocumentUploadRequest + FastAPI dependency
+    validations/
+      document_upload_validation.py         # all upload rules (size, type, magic bytes, filename)
+  response/
+    document_upload.py                      # DocumentUploadResponse, StorageInfo
+```  
+Add a new endpoint by adding one request file, one validation file named after it, and one response file.
