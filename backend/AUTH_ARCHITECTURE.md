@@ -402,13 +402,15 @@ All `.env.*` files except `.env.example` are gitignored. `docker-compose.yml` lo
 
 ### Local development with impersonation
 
-In \.env.local\, \GCP_IMPERSONATE_SERVICE_ACCOUNT=svc-rag-dev@<project>.iam.gserviceaccount.com\ makes the local key act as a dedicated low-privilege dev service account. Required one-time IAM setup: the identity in \GCP_CREDENTIAL_FILE\ needs \oles/iam.serviceAccountTokenCreator\ on \svc-rag-dev\, and \svc-rag-dev\ needs only the storage/Vertex AI roles the app uses. The IAM Service Account Credentials API must be enabled.
+In \.env.local\, \GCP_IMPERSONATE_SERVICE_ACCOUNT=svc-rag-dev@<project>.iam.gserviceaccount.com\ makes the local key act as a dedicated low-privilege dev service account. Required one-time IAM setup: the identity in \GCP_CREDENTIAL_FILE\ needs \
+oles/iam.serviceAccountTokenCreator\ on \svc-rag-dev\, and \svc-rag-dev\ needs only the storage/Vertex AI roles the app uses. The IAM Service Account Credentials API must be enabled.
 
 ---
 
 ## 13. Upload API (production behaviour)
 
-- \POST /documents/upload\ is async; the blocking GCS call runs in a worker thread (\un_in_threadpool\).
+- \POST /documents/upload\ is async; the blocking GCS call runs in a worker thread (\
+un_in_threadpool\).
 - Authentication: header \X-API-Key\ checked in constant time against \API_KEY\ (Secret Manager in production, required at startup).
 - Validation: 10 MB limit (Content-Length pre-check plus exact size), extension allow-list, magic-byte check, sanitised object name, content type derived server-side.
 - GCS: uploads never overwrite (\if_generation_match=0\), are retry-safe, and time out after 120 s.
@@ -430,9 +432,9 @@ Add a new endpoint by adding one request file, one validation file named after i
 
 ---
 
-## 14. Shared SDK (`backend/sdk/`)
+## 14. Shared SDK (separate repo `rag-platform-sdk`)
 
-Framework-level code lives in `sdk/` and never imports from `app/`; the app injects its settings. `app/auth/gcp.py`, `app/core/security.py` and `app/core/rate_limit.py` are now thin bindings to the SDK.
+Framework-level code lives in the sibling repository `rag-platform-sdk` and never imports from `app/`; the app injects its settings. The backend consumes it as a built wheel: `rag-platform-sdk/scripts/release.ps1` runs the SDK tests, builds the wheel and copies it to `backend/vendor/`; `requirements.txt` resolves it with `--find-links ./vendor` and `rag-platform-sdk>=0.1,<0.2`, and the Dockerfile copies `vendor/` before `pip install`. `app/auth/gcp.py`, `app/core/security.py` and `app/core/rate_limit.py` are now thin bindings to the SDK.
 
 | SDK module | Provides |
 |---|---|
@@ -446,4 +448,4 @@ Framework-level code lives in `sdk/` and never imports from `app/`; the app inje
 | `sdk.health` | `/health` (liveness) and `/ready` (readiness) routes |
 | `sdk.app_factory` | `create_base_app(...)` wires everything above in one call |
 
-`app/main.py` now calls `create_base_app(...)` and only adds app-specific routes and lifespan. `StorageServiceError` subclasses `ServiceUnavailableError`, so it is returned as a generic 503 automatically. The SDK can be reused by another service by copying the folder or installing it with its `pyproject.toml`.
+`app/main.py` now calls `create_base_app(...)` and only adds app-specific routes and lifespan. `StorageServiceError` subclasses `ServiceUnavailableError`, so it is returned as a generic 503 automatically. Another service consumes the same wheel (or a registry copy of it) and guards compatibility with `require_sdk_version`.

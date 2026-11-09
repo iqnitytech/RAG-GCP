@@ -3,13 +3,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
-from sdk import create_base_app
+from sdk import __version__ as sdk_version
+from sdk import create_base_app, require_sdk_version
 
 from app.api.documents.documents import router as documents_router
 from app.core.config import get_settings
 from app.services.storage.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
+
+# This app is built against SDK 0.1.x; refuse to start on an incompatible SDK.
+require_sdk_version(minimum="0.1.0", below="0.2.0")
 
 
 def create_app() -> FastAPI:
@@ -27,7 +31,7 @@ def create_app() -> FastAPI:
         # starting so you can fix credentials without a crash loop.
         try:
             await run_in_threadpool(get_storage_service)
-            logger.info("Storage service ready")
+            logger.info("Storage service ready (sdk=%s)", sdk_version)
         except Exception:
             if settings.is_production:
                 raise
@@ -66,6 +70,7 @@ def create_app() -> FastAPI:
         return {
             "message": "Enterprise RAG API is running!",
             "environment": settings.app_env,
+            "sdk_version": sdk_version,
             "project_id": settings.gcp_project_id,
             "region": settings.gcp_region,
         }

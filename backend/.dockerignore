@@ -16,3 +16,9 @@ venv/
 .ruff_cache/
 .coverage
 .DS_Store
+secrets/
+tests/
+*.old
+pytest.ini
+requirements-dev.txt
+AUTH_ARCHITECTURE.md

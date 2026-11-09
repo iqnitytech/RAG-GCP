@@ -33,7 +33,7 @@ dist/
 # IDE
 .vscode/
 .idea/
-/app/infrastructure/terraform/.terraform.lock.hcl
+/infra/terraform/.terraform.lock.hcl
 
 -/Lib/
 -/Scripts/
