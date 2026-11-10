@@ -3,8 +3,7 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 
-from app.core.rate_limit import rate_limit
-from app.core.security import require_api_key
+from app.core.security import rate_limit, require_api_key
 from app.dependencies import get_storage_service_dependency
 from app.models.request.document_upload import (
     DocumentUploadRequest,

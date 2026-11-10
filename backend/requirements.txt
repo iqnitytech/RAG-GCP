@@ -3,7 +3,7 @@
 # Shared platform SDK: built in the rag-platform-sdk repo and delivered as a wheel
 # in ./vendor (see rag-platform-sdk/scripts/release.ps1).
 --find-links ./vendor
-rag-platform-sdk>=0.1,<0.2
+rag-platform-sdk>=0.2,<0.3
 
 # FastAPI
 fastapi==0.162.0

@@ -8,12 +8,13 @@ from sdk import create_base_app, require_sdk_version
 
 from app.api.documents.documents import router as documents_router
 from app.core.config import get_settings
+from app.models.request.validations.document_upload_validation import MAX_REQUEST_SIZE
 from app.services.storage.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
 
-# This app is built against SDK 0.1.x; refuse to start on an incompatible SDK.
-require_sdk_version(minimum="0.1.0", below="0.2.0")
+# This app is built against SDK 0.2.x; refuse to start on an incompatible SDK.
+require_sdk_version(minimum="0.2.0", below="0.3.0")
 
 
 def create_app() -> FastAPI:
@@ -61,6 +62,9 @@ def create_app() -> FastAPI:
         service_name="rag-gcp-backend",
         lifespan=lifespan,
         readiness_check=storage_ready,
+        route_body_limits={"/documents/upload": MAX_REQUEST_SIZE},
+        require_content_length_paths=("/documents/upload",),
+        max_body_bytes_message="Maximum file size is 10 MB",
     )
 
     @app.get("/")

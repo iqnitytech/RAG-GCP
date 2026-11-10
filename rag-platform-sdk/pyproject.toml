@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-platform-sdk"
+dynamic = ["version"]
+description = "Shared FastAPI/GCP building blocks: auth, schemas, logging, middleware, errors, probes."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+    "starlette>=0.37",
+    "pydantic>=2",
+    "google-auth>=2.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27", "build>=1.2"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sdk._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sdk*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
+
