@@ -41,6 +41,7 @@ Enterprise-grade Retrieval Augmented Generation (RAG) platform built on **FastAP
 ## Documentation
 
 - **[Developer Guide (`docs/DEVELOPMENT.md`)](docs/DEVELOPMENT.md)** — Prerequisites, environment files, authentication modes, running tests, SDK release flow, and deployment overview.
+- **[EDH Connector Architecture (`docs/EDH_CONNECTOR_ARCHITECTURE.md`)](docs/EDH_CONNECTOR_ARCHITECTURE.md)** — Strategy-Pattern Enterprise Data Hub connector (`sdk.edh`) for Data Lakes, Object Storage Hubs, and API-Driven Hubs using Python core libraries.
 - **[Target Architecture (`docs/TARGET_ARCHITECTURE.md`)](docs/TARGET_ARCHITECTURE.md)** — Hexagonal architecture, ingestion & online planes, security controls, and production readiness gates.
 - **[Task List (`docs/TASK_LIST.md`)](docs/TASK_LIST.md)** — Phased implementation checklist and review findings.
 - **[Authentication Architecture (`backend/AUTH_ARCHITECTURE.md`)](backend/AUTH_ARCHITECTURE.md)** — Detailed GCP WIF, ADC, impersonation, and API-key security reference.

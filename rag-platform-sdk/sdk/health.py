@@ -6,7 +6,7 @@ from typing import Awaitable, Callable
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from sdk.schemas.response import HealthResponse
+from sdk.models.service_models.health_response import HealthResponse
 
 logger = logging.getLogger(__name__)
 

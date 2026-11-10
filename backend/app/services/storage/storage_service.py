@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from functools import lru_cache
 from io import IOBase
 from typing import BinaryIO
@@ -9,6 +8,7 @@ from sdk.errors import ServiceUnavailableError
 
 from app.auth.gcp import get_gcp_credentials
 from app.core.config import Settings, get_settings
+from app.models.service_models import UploadResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,26 +24,6 @@ class StorageServiceError(ServiceUnavailableError):
     """Raised when a GCS operation fails (clients see a generic 503)."""
 
     public_message = "Storage service is temporarily unavailable"
-
-# ---------------------------------------------------------------------------
-# Typed return value
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class UploadResult:
-    """Immutable result returned after a successful GCS upload."""
-
-    bucket: str
-    object_name: str
-    gs_url: str
-
-    def to_dict(self) -> dict[str, str]:
-        """Serialise to a plain dict (e.g. for JSON responses)."""
-        return {
-            "bucket": self.bucket,
-            "object_name": self.object_name,
-            "gs_url": self.gs_url,
-        }
 
 # ---------------------------------------------------------------------------
 # Service

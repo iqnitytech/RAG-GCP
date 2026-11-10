@@ -41,6 +41,38 @@ class ServiceUnavailableError(AppError):
     public_message = "Service is temporarily unavailable"
 
 
+class EdhError(AppError):
+    """Base exception for all Enterprise Data Hub connector operations."""
+
+    status_code: int = 502
+    public_message: str = "Enterprise Data Hub error"
+    retryable: bool = False
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        public_message: str | None = None,
+        retryable: bool | None = None,
+        provider: str = "",
+        operation: str = "",
+    ) -> None:
+        super().__init__(message, public_message=public_message)
+        if retryable is not None:
+            self.retryable = retryable
+        self.provider = provider
+        self.operation = operation
+
+
+class EdhConfigError(BadRequestError, EdhError):
+    """Invalid connector configuration, URI, path traversal, or unregistered strategy."""
+
+    status_code = 400
+    public_message = "Invalid data hub configuration or request"
+    retryable = False
+
+
+
 def _error_body(request: Request, detail: str) -> dict:
     request_id = getattr(request.state, "request_id", None) or get_request_id()
     return {"detail": detail, "request_id": request_id}

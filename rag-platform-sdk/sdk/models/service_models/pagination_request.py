@@ -1,11 +1,11 @@
-"""Generic request schemas and dependencies."""
+"""Pagination request model and FastAPI query parameter dependency."""
 
 from fastapi import Query
 from pydantic import BaseModel
 
 
 class PageParams(BaseModel):
-    """Standard pagination parameters (1-based pages)."""
+    """Standard pagination request parameters (1-based pages)."""
 
     page: int = 1
     page_size: int = 20
@@ -21,4 +21,3 @@ def get_page_params(
 ) -> PageParams:
     """FastAPI dependency: ``params: PageParams = Depends(get_page_params)``."""
     return PageParams(page=page, page_size=page_size)
-

@@ -2,7 +2,9 @@
 
 Shared FastAPI / GCP building blocks used by the RAG services: GCP + API-key
 auth, generic schemas, structured logging with request ids, middleware, error
-handling, rate limiting, health probes and `create_base_app`.
+handling, rate limiting, health probes, `create_base_app`, and the Strategy-Pattern
+Enterprise Data Hub (EDH) connector (`sdk.edh`) for Data Lakes, Object Storage Hubs,
+and API-Driven Data Hubs.
 
 Never imports from the consuming application; apps inject their settings.
 

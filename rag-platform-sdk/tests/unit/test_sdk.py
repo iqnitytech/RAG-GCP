@@ -142,12 +142,12 @@ def test_rate_limiter_bounds_memory_and_evicts_idle(monkeypatch):
 
 
 def test_body_size_limit_middleware_rejects_oversized_and_chunked():
-    from fastapi import File, UploadFile
+    from fastapi import File, Request, UploadFile
 
     parsed = False
     app = create_base_app(
         title="t",
-        route_body_limits={"/upload": 64},
+        route_body_limits={"/upload": 64, "/stream": 64},
         require_content_length_paths=("/strict",),
     )
 
@@ -156,6 +156,13 @@ def test_body_size_limit_middleware_rejects_oversized_and_chunked():
         nonlocal parsed
         parsed = True
         return {"size": len(await file.read())}
+
+    @app.post("/stream")
+    async def stream_ep(request: Request):
+        nonlocal parsed
+        body = await request.body()
+        parsed = True
+        return {"size": len(body)}
 
     @app.post("/strict")
     async def strict():
@@ -172,7 +179,7 @@ def test_body_size_limit_middleware_rejects_oversized_and_chunked():
         for _ in range(10):
             yield b"0123456789"
 
-    r_chunked = c.post("/upload", content=chunk_gen(), headers={"Content-Type": "application/octet-stream"})
+    r_chunked = c.post("/stream", content=chunk_gen(), headers={"Content-Type": "application/octet-stream"})
     assert r_chunked.status_code == 413
     assert not parsed
 
