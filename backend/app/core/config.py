@@ -157,10 +157,6 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("SF_CLIENT_SECRET", "sf_client_secret"),
     )
-    sf_test_sobject: str = Field(
-        default="Account",
-        validation_alias=AliasChoices("SF_TEST_SOBJECT", "sf_test_sobject"),
-    )
 
     # Databricks EDH Connector (optional; secrets injected via Secret Manager in production)
     databricks_host: str = Field(
@@ -214,10 +210,6 @@ class Settings(BaseSettings):
     @property
     def SF_CLIENT_SECRET(self) -> SecretStr:
         return self.sf_client_secret
-
-    @property
-    def SF_TEST_SOBJECT(self) -> str:
-        return self.sf_test_sobject
 
     @property
     def DATABRICKS_HOST(self) -> str:

@@ -1,33 +1,26 @@
 """Real-endpoint integration tests for ``SalesforceEdhStrategy``.
 
-Configure credentials in ``rag-platform-sdk/tests/integration/.env.integration``
-and target SObject / ContentVersion constants in ``rag-platform-sdk/tests/integration/constants.py``.
+Configure credentials in ``rag-platform-sdk/tests/integration/.env.integration``,
+Salesforce object names in ``rag-platform-sdk/tests/integration/salesforce_objects.py``,
+and generic constants in ``rag-platform-sdk/tests/integration/constants.py``.
 """
 
 from __future__ import annotations
 
 from sdk.connectors.edh import DataZone, EdhConnector
-from tests.integration.constants import (
-    DEFAULT_PAGE_SIZE,
-    SALESFORCE_CONTENT_VERSION_PREFIX,
-    SALESFORCE_SOBJECT_FILTER,
-    SALESFORCE_SOBJECT_NAME,
-)
+from tests.integration.constants import DEFAULT_PAGE_SIZE
+from tests.integration.salesforce_objects import SalesforceObjects
 
 
-def test_salesforce_ping_and_fetch_sobject_records(
-    salesforce_connector: EdhConnector,
-    integration_env: dict[str, str],
-):
-    """Connect to the configured Salesforce org and query real SObject records."""
-    sobject_name = integration_env.get("SF_TEST_SOBJECT") or SALESFORCE_SOBJECT_NAME
+def test_salesforce_ping_and_fetch_sobject_records(salesforce_connector: EdhConnector):
+    """Connect to the configured Salesforce org and query SObject records from SalesforceObjects."""
     with salesforce_connector as sf:
         assert sf.ping() is True
         records = list(
             sf.read_records(
-                sobject_name,
+                SalesforceObjects.TARGET_SOBJECT,
                 zone=DataZone.CURATED,
-                partition_filter=SALESFORCE_SOBJECT_FILTER or None,
+                partition_filter=SalesforceObjects.TARGET_SOBJECT_FILTER or None,
             )
         )
         assert isinstance(records, list)
@@ -38,7 +31,7 @@ def test_salesforce_list_content_version_objects(salesforce_connector: EdhConnec
     with salesforce_connector as sf:
         page = sf.list_objects(
             zone=DataZone.RAW,
-            prefix=SALESFORCE_CONTENT_VERSION_PREFIX,
+            prefix=SalesforceObjects.CONTENT_VERSION_PREFIX,
             page_size=DEFAULT_PAGE_SIZE,
         )
         assert isinstance(page.items, tuple)
