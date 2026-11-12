@@ -47,6 +47,7 @@ class EdhError(AppError):
     status_code: int = 502
     public_message: str = "Enterprise Data Hub error"
     retryable: bool = False
+    error_code: str = "EDH_ERROR"
 
     def __init__(
         self,
@@ -56,12 +57,17 @@ class EdhError(AppError):
         retryable: bool | None = None,
         provider: str = "",
         operation: str = "",
+        error_code: str = "",
+        upstream_status: int | None = None,
     ) -> None:
         super().__init__(message, public_message=public_message)
         if retryable is not None:
             self.retryable = retryable
         self.provider = provider
         self.operation = operation
+        if error_code:
+            self.error_code = error_code
+        self.upstream_status = upstream_status
 
 
 class EdhConfigError(BadRequestError, EdhError):

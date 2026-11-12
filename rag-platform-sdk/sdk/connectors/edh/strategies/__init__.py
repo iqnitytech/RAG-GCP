@@ -1,6 +1,7 @@
 """Concrete Enterprise Data Hub (EDH) strategy implementations."""
 
 from sdk.connectors.edh.strategies._http import (
+    HttpConnectionPool,
     RawHttpResponse,
     TransportCallable,
     sign_s3_v4_headers,
@@ -22,6 +23,7 @@ __all__ = [
     "ApiDrivenEdhStrategy",
     "DataLakeStrategy",
     "DatabricksEdhStrategy",
+    "HttpConnectionPool",
     "InMemoryEdhStrategy",
     "ObjectStorageHubStrategy",
     "RawHttpResponse",

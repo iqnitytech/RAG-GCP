@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Callable
 
 from sdk.connectors.edh import (
+    AsyncEdhConnector,
     EdhConnector,
     make_databricks_oauth_token_getter,
     make_salesforce_oauth_token_getter,
@@ -98,4 +99,23 @@ def create_edh_connector(
 def get_edh_connector() -> EdhConnector:
     """Return a cached default :class:`EdhConnector` instance."""
     return create_edh_connector()
+
+
+def create_async_edh_connector(
+    settings: Settings | None = None,
+    *,
+    strategy: str = "data_lake",
+    root_path: str = "./.data_lake",
+    endpoint_url: str = "",
+    auth_token_getter: Callable[[], str] | None = None,
+) -> AsyncEdhConnector:
+    """Build an :class:`AsyncEdhConnector` configured from application settings."""
+    sync_conn = create_edh_connector(
+        settings,
+        strategy=strategy,
+        root_path=root_path,
+        endpoint_url=endpoint_url,
+        auth_token_getter=auth_token_getter,
+    )
+    return AsyncEdhConnector(sync_conn.config, strategy=sync_conn.strategy)
 

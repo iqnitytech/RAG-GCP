@@ -11,17 +11,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
+from sdk.connectors.edh.error_constants.DataLakeErrorConstants import DataLakeErrorConstants
 from sdk.connectors.edh.errors import (
     EdhConfigError,
     EdhConflictError,
     EdhIntegrityError,
     EdhNotFoundError,
+    log_and_build_edh_error,
 )
 from sdk.models.edh_models import (
     DataZone,
@@ -37,6 +40,8 @@ from sdk.models.edh_models import (
 )
 from sdk.connectors.edh.strategies._serde import deserialize_records, serialize_records
 
+logger = logging.getLogger("sdk.edh.data_lake")
+
 
 class DataLakeStrategy:
     """Zone- and Hive-partition-aware Data Lake strategy using Python core libraries."""
@@ -45,7 +50,15 @@ class DataLakeStrategy:
 
     def __init__(self, config: EdhConnectorConfig) -> None:
         if not config.root_path or not config.root_path.strip():
-            raise EdhConfigError("DataLakeStrategy requires EdhConnectorConfig.root_path")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DataLakeErrorConstants.MSG_MISSING_ROOT_PATH,
+                provider=DataLakeErrorConstants.PROVIDER,
+                operation="init",
+                error_code=DataLakeErrorConstants.ERR_MISSING_ROOT_PATH,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         self._config = config
         self._root = Path(config.root_path).resolve() / normalize_object_key(config.namespace)
         self._root.mkdir(parents=True, exist_ok=True)
@@ -56,20 +69,31 @@ class DataLakeStrategy:
 
     def _resolve_paths(self, ref: EdhObjectRef) -> tuple[Path, Path]:
         if ref.namespace != self._config.namespace:
-            raise EdhConfigError(
-                f"Namespace mismatch: connector bound to {self._config.namespace!r}, got {ref.namespace!r}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DataLakeErrorConstants.MSG_NAMESPACE_MISMATCH.format(
+                    expected=self._config.namespace,
+                    actual=ref.namespace,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="resolve_path",
+                error_code=DataLakeErrorConstants.ERR_NAMESPACE_MISMATCH,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFIG_ERROR,
             )
         rel_path = normalize_object_key(ref.qualified_key)
         target = (self._root / rel_path).resolve()
         try:
             target.relative_to(self._root)
         except ValueError as exc:
-            raise EdhConfigError(
-                f"Resolved path escapes data lake root: {ref.key!r}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DataLakeErrorConstants.MSG_PATH_ESCAPE.format(key=ref.key),
                 provider=self.STRATEGY_NAME,
                 operation="resolve_path",
+                error_code=DataLakeErrorConstants.ERR_PATH_ESCAPE,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFIG_ERROR,
             ) from exc
         meta_path = target.with_name(f".{target.name}.edhmeta.json")
         return target, meta_path
@@ -91,18 +115,31 @@ class DataLakeStrategy:
 
         digest = compute_sha256(payload)
         if opts.expected_sha256 and opts.expected_sha256.lower() != digest:
-            raise EdhIntegrityError(
-                f"SHA-256 mismatch on put_bytes for {ref.uri}: expected {opts.expected_sha256}, got {digest}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                DataLakeErrorConstants.MSG_SHA256_MISMATCH_WRITE.format(
+                    uri=ref.uri,
+                    expected=opts.expected_sha256,
+                    actual=digest,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="put_bytes",
+                error_code=DataLakeErrorConstants.ERR_SHA256_MISMATCH_WRITE,
+                public_message=DataLakeErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
 
         target, meta_path = self._resolve_paths(ref)
         if not opts.overwrite and target.exists():
-            raise EdhConflictError(
-                f"Object already exists and overwrite=False: {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConflictError,
+                DataLakeErrorConstants.MSG_CONFLICT.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="put_bytes",
+                error_code=DataLakeErrorConstants.ERR_CONFLICT,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFLICT,
+                level=logging.WARNING,
             )
 
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -140,32 +177,54 @@ class DataLakeStrategy:
     def get_bytes(self, ref: EdhObjectRef) -> bytes:
         target, meta_path = self._resolve_paths(ref)
         if not target.is_file():
-            raise EdhNotFoundError(
-                f"Data lake object not found: {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhNotFoundError,
+                DataLakeErrorConstants.MSG_NOT_FOUND.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="get_bytes",
+                error_code=DataLakeErrorConstants.ERR_NOT_FOUND,
+                public_message=DataLakeErrorConstants.PUBLIC_NOT_FOUND,
+                level=logging.WARNING,
             )
         data = target.read_bytes()
         if meta_path.is_file():
             meta_doc = json.loads(meta_path.read_text(encoding="utf-8"))
             expected_sha = meta_doc.get("sha256", "")
             if expected_sha and compute_sha256(data) != expected_sha:
-                raise EdhIntegrityError(
-                    f"Stored object failed SHA-256 verification: {ref.uri}",
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhIntegrityError,
+                    DataLakeErrorConstants.MSG_SHA256_MISMATCH_READ.format(uri=ref.uri),
                     provider=self.STRATEGY_NAME,
                     operation="get_bytes",
+                    error_code=DataLakeErrorConstants.ERR_SHA256_MISMATCH_READ,
+                    public_message=DataLakeErrorConstants.PUBLIC_INTEGRITY_ERROR,
                 )
         return data
 
     def stream_chunks(self, ref: EdhObjectRef, *, chunk_size: int = 65536) -> Iterator[bytes]:
         if chunk_size <= 0:
-            raise EdhConfigError("chunk_size must be > 0")
-        target, meta_path = self._resolve_paths(ref)
-        if not target.is_file():
-            raise EdhNotFoundError(
-                f"Data lake object not found: {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DataLakeErrorConstants.MSG_INVALID_CHUNK_SIZE.format(chunk_size=chunk_size),
                 provider=self.STRATEGY_NAME,
                 operation="stream_chunks",
+                error_code=DataLakeErrorConstants.ERR_INVALID_CHUNK_SIZE,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
+        target, meta_path = self._resolve_paths(ref)
+        if not target.is_file():
+            raise log_and_build_edh_error(
+                logger,
+                EdhNotFoundError,
+                DataLakeErrorConstants.MSG_NOT_FOUND.format(uri=ref.uri),
+                provider=self.STRATEGY_NAME,
+                operation="stream_chunks",
+                error_code=DataLakeErrorConstants.ERR_NOT_FOUND,
+                public_message=DataLakeErrorConstants.PUBLIC_NOT_FOUND,
+                level=logging.WARNING,
             )
         expected_sha = ""
         if meta_path.is_file():
@@ -181,19 +240,28 @@ class DataLakeStrategy:
                 yield chunk
 
         if expected_sha and hasher.hexdigest() != expected_sha:
-            raise EdhIntegrityError(
-                f"Streamed object failed SHA-256 verification: {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                DataLakeErrorConstants.MSG_SHA256_MISMATCH_STREAM.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="stream_chunks",
+                error_code=DataLakeErrorConstants.ERR_SHA256_MISMATCH_STREAM,
+                public_message=DataLakeErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
 
     def head(self, ref: EdhObjectRef) -> EdhObjectMetadata:
         target, meta_path = self._resolve_paths(ref)
         if not target.is_file():
-            raise EdhNotFoundError(
-                f"Data lake object not found: {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhNotFoundError,
+                DataLakeErrorConstants.MSG_NOT_FOUND.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="head",
+                error_code=DataLakeErrorConstants.ERR_NOT_FOUND,
+                public_message=DataLakeErrorConstants.PUBLIC_NOT_FOUND,
+                level=logging.WARNING,
             )
         if meta_path.is_file():
             meta_doc = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -227,7 +295,15 @@ class DataLakeStrategy:
         page_token: str | None = None,
     ) -> EdhListPage:
         if page_size <= 0:
-            raise EdhConfigError("page_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DataLakeErrorConstants.MSG_INVALID_PAGE_SIZE.format(page_size=page_size),
+                provider=self.STRATEGY_NAME,
+                operation="list_objects",
+                error_code=DataLakeErrorConstants.ERR_INVALID_PAGE_SIZE,
+                public_message=DataLakeErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         zone_dir = self._root / zone.value
         if not zone_dir.is_dir():
             return EdhListPage(items=(), next_page_token=None)

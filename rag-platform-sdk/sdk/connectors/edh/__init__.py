@@ -10,7 +10,15 @@ Provides a Strategy-Pattern connector and Python core-library strategies for:
 - **In-Memory Fake** (:class:`InMemoryEdhStrategy`): Fast contract-tested double.
 """
 
-from sdk.connectors.edh.connector import EdhConnector
+from sdk.connectors.edh.connector import AsyncEdhConnector, EdhConnector
+from sdk.connectors.edh.error_constants import (
+    ApiHubErrorConstants,
+    DataLakeErrorConstants,
+    DatabricksErrorConstants,
+    MemoryErrorConstants,
+    ObjectStorageErrorConstants,
+    SalesforceErrorConstants,
+)
 from sdk.connectors.edh.errors import (
     EdhAuthError,
     EdhConfigError,
@@ -20,6 +28,7 @@ from sdk.connectors.edh.errors import (
     EdhNotFoundError,
     EdhRateLimitError,
     EdhTransientError,
+    log_and_build_edh_error,
 )
 from sdk.models.edh_models import (
     CircuitBreakerPolicy,
@@ -52,6 +61,7 @@ from sdk.connectors.edh.strategies import (
     ApiDrivenEdhStrategy,
     DataLakeStrategy,
     DatabricksEdhStrategy,
+    HttpConnectionPool,
     InMemoryEdhStrategy,
     ObjectStorageHubStrategy,
     RawHttpResponse,
@@ -64,11 +74,15 @@ from sdk.connectors.edh.strategies import (
 
 __all__ = [
     "ApiDrivenEdhStrategy",
+    "ApiHubErrorConstants",
+    "AsyncEdhConnector",
     "CircuitBreaker",
     "CircuitBreakerPolicy",
     "CircuitState",
+    "DataLakeErrorConstants",
     "DataLakeStrategy",
     "DatabricksEdhStrategy",
+    "DatabricksErrorConstants",
     "DataZone",
     "EdhAuthError",
     "EdhConfigError",
@@ -91,17 +105,22 @@ __all__ = [
     "EdhTransientError",
     "EdhWriteOptions",
     "EdhWriteStrategyPort",
+    "HttpConnectionPool",
     "InMemoryEdhStrategy",
+    "MemoryErrorConstants",
+    "ObjectStorageErrorConstants",
     "ObjectStorageHubStrategy",
     "RawHttpResponse",
     "RecordFormat",
     "RetryPolicy",
     "SalesforceEdhStrategy",
+    "SalesforceErrorConstants",
     "TransportCallable",
     "compute_sha256",
     "create_default_registry",
     "default_strategy_registry",
     "execute_with_resilience",
+    "log_and_build_edh_error",
     "make_databricks_oauth_token_getter",
     "make_salesforce_oauth_token_getter",
     "normalize_object_key",

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Iterator, Mapping
 
+from sdk.connectors.edh.error_constants.MemoryErrorConstants import MemoryErrorConstants
 from sdk.connectors.edh.errors import (
     EdhConfigError,
     EdhConflictError,
     EdhIntegrityError,
     EdhNotFoundError,
+    log_and_build_edh_error,
 )
 from sdk.models.edh_models import (
     DataZone,
@@ -25,6 +28,8 @@ from sdk.models.edh_models import (
     normalize_object_key,
 )
 from sdk.connectors.edh.strategies._serde import deserialize_records, serialize_records
+
+logger = logging.getLogger("sdk.edh.memory")
 
 
 class InMemoryEdhStrategy:
@@ -44,10 +49,17 @@ class InMemoryEdhStrategy:
 
     def _check_namespace(self, ref: EdhObjectRef) -> str:
         if ref.namespace != self._config.namespace:
-            raise EdhConfigError(
-                f"Namespace mismatch: connector bound to {self._config.namespace!r}, got {ref.namespace!r}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                MemoryErrorConstants.MSG_NAMESPACE_MISMATCH.format(
+                    expected=self._config.namespace,
+                    actual=ref.namespace,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="check_namespace",
+                error_code=MemoryErrorConstants.ERR_NAMESPACE_MISMATCH,
+                public_message=MemoryErrorConstants.PUBLIC_CONFIG_ERROR,
             )
         return ref.qualified_key
 
@@ -68,19 +80,28 @@ class InMemoryEdhStrategy:
 
         digest = compute_sha256(payload)
         if opts.expected_sha256 and opts.expected_sha256.lower() != digest:
-            raise EdhIntegrityError(
-                f"SHA-256 mismatch on put_bytes for {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                MemoryErrorConstants.MSG_SHA256_MISMATCH_WRITE.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="put_bytes",
+                error_code=MemoryErrorConstants.ERR_SHA256_MISMATCH_WRITE,
+                public_message=MemoryErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
 
         qkey = self._check_namespace(ref)
         with self._lock:
             if not opts.overwrite and qkey in self._store:
-                raise EdhConflictError(
-                    f"Object already exists and overwrite=False: {ref.uri}",
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhConflictError,
+                    MemoryErrorConstants.MSG_CONFLICT.format(uri=ref.uri),
                     provider=self.STRATEGY_NAME,
                     operation="put_bytes",
+                    error_code=MemoryErrorConstants.ERR_CONFLICT,
+                    public_message=MemoryErrorConstants.PUBLIC_CONFLICT,
+                    level=logging.WARNING,
                 )
             version = opts.idempotency_key or ref.version or digest[:16]
             meta = EdhObjectMetadata(
@@ -105,16 +126,29 @@ class InMemoryEdhStrategy:
         with self._lock:
             entry = self._store.get(qkey)
             if entry is None:
-                raise EdhNotFoundError(
-                    f"Object not found in memory strategy: {ref.uri}",
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhNotFoundError,
+                    MemoryErrorConstants.MSG_NOT_FOUND.format(uri=ref.uri),
                     provider=self.STRATEGY_NAME,
                     operation="get_bytes",
+                    error_code=MemoryErrorConstants.ERR_NOT_FOUND,
+                    public_message=MemoryErrorConstants.PUBLIC_NOT_FOUND,
+                    level=logging.WARNING,
                 )
             return entry[0]
 
     def stream_chunks(self, ref: EdhObjectRef, *, chunk_size: int = 65536) -> Iterator[bytes]:
         if chunk_size <= 0:
-            raise EdhConfigError("chunk_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                MemoryErrorConstants.MSG_INVALID_CHUNK_SIZE.format(chunk_size=chunk_size),
+                provider=self.STRATEGY_NAME,
+                operation="stream_chunks",
+                error_code=MemoryErrorConstants.ERR_INVALID_CHUNK_SIZE,
+                public_message=MemoryErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         payload = self.get_bytes(ref)
         for offset in range(0, len(payload), chunk_size):
             yield payload[offset : offset + chunk_size]
@@ -124,10 +158,15 @@ class InMemoryEdhStrategy:
         with self._lock:
             entry = self._store.get(qkey)
             if entry is None:
-                raise EdhNotFoundError(
-                    f"Object not found in memory strategy: {ref.uri}",
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhNotFoundError,
+                    MemoryErrorConstants.MSG_NOT_FOUND.format(uri=ref.uri),
                     provider=self.STRATEGY_NAME,
                     operation="head",
+                    error_code=MemoryErrorConstants.ERR_NOT_FOUND,
+                    public_message=MemoryErrorConstants.PUBLIC_NOT_FOUND,
+                    level=logging.WARNING,
                 )
             return entry[1]
 
@@ -145,7 +184,15 @@ class InMemoryEdhStrategy:
         page_token: str | None = None,
     ) -> EdhListPage:
         if page_size <= 0:
-            raise EdhConfigError("page_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                MemoryErrorConstants.MSG_INVALID_PAGE_SIZE.format(page_size=page_size),
+                provider=self.STRATEGY_NAME,
+                operation="list_objects",
+                error_code=MemoryErrorConstants.ERR_INVALID_PAGE_SIZE,
+                public_message=MemoryErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         clean_prefix = normalize_object_key(prefix) if prefix.strip() else ""
         zone_prefix = f"{zone.value}/"
         full_prefix = f"{zone_prefix}{clean_prefix}" if clean_prefix else zone_prefix

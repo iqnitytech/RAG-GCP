@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import re
 import time
 from datetime import datetime, timezone
@@ -28,20 +29,26 @@ from threading import Lock
 from typing import Any, Callable, Iterator, Mapping
 from urllib.parse import quote, urlencode
 
+from sdk.connectors.edh.error_constants.DatabricksErrorConstants import DatabricksErrorConstants
 from sdk.connectors.edh.errors import (
     EdhAuthError,
+    EdhConfigError,
+    EdhConflictError,
+    EdhError,
     EdhIntegrityError,
     EdhNotFoundError,
+    EdhRateLimitError,
     EdhTransientError,
+    log_and_build_edh_error,
 )
 from sdk.connectors.edh.strategies._http import (
     RawHttpResponse,
     TransportCallable,
-    raise_for_status,
     urllib_transport,
 )
-from sdk.errors import EdhConfigError
 from sdk.logging.context import get_request_id
+
+logger = logging.getLogger("sdk.edh.databricks")
 from sdk.models.edh_models import (
     DataZone,
     EdhConnectorConfig,
@@ -63,8 +70,32 @@ def _validate_uc_identifier(name: str, *, kind: str = "identifier") -> str:
     """Validate a Unity Catalog catalog, schema, table, or column identifier."""
     candidate = name.strip().replace("/", "_").replace("-", "_")
     if not _SAFE_UC_IDENTIFIER.match(candidate):
-        raise EdhConfigError(f"Unsafe Databricks Unity Catalog {kind}: {name!r}")
+        raise log_and_build_edh_error(
+            logger,
+            EdhConfigError,
+            DatabricksErrorConstants.MSG_UNSAFE_IDENTIFIER.format(kind=kind, name=name),
+            provider=DatabricksErrorConstants.PROVIDER,
+            operation="validate_uc_identifier",
+            error_code=DatabricksErrorConstants.ERR_UNSAFE_IDENTIFIER,
+            public_message=DatabricksErrorConstants.PUBLIC_CONFIG_ERROR,
+        )
     return candidate
+
+
+def _extract_databricks_error_detail(body: bytes) -> tuple[str, str]:
+    """Extract ``(dbx_error_code, detail)`` from a Databricks REST JSON error body."""
+    if not body:
+        return ("", "")
+    raw = body.decode("utf-8", errors="replace").strip()
+    try:
+        doc = json.loads(raw)
+        if isinstance(doc, Mapping):
+            code = str(doc.get("error_code") or doc.get("code") or "")
+            msg = str(doc.get("message") or doc.get("detail") or raw[:300])
+            return (code, msg)
+    except Exception:
+        pass
+    return ("", raw[:300])
 
 
 def _escape_sql_literal(value: Any) -> str:
@@ -134,18 +165,31 @@ def make_databricks_oauth_token_getter(
                 timeout_seconds,
             )
             if resp.status_code != 200:
-                raise EdhAuthError(
-                    f"Databricks OAuth2 token exchange failed with HTTP {resp.status_code}",
-                    provider="databricks",
+                _, detail = _extract_databricks_error_detail(resp.body)
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhAuthError,
+                    DatabricksErrorConstants.MSG_OAUTH_FAILED.format(
+                        status_code=resp.status_code,
+                        detail=detail or "token exchange rejected",
+                    ),
+                    provider=DatabricksErrorConstants.PROVIDER,
                     operation="oauth2_token",
+                    error_code=DatabricksErrorConstants.ERR_OAUTH_TOKEN_EXCHANGE,
+                    public_message=DatabricksErrorConstants.PUBLIC_AUTH_ERROR,
+                    upstream_status=resp.status_code,
                 )
             doc = json.loads(resp.body.decode("utf-8"))
             token = doc.get("access_token", "")
             if not token:
-                raise EdhAuthError(
-                    "Databricks OAuth2 response missing access_token",
-                    provider="databricks",
+                raise log_and_build_edh_error(
+                    logger,
+                    EdhAuthError,
+                    DatabricksErrorConstants.MSG_OAUTH_MISSING_TOKEN,
+                    provider=DatabricksErrorConstants.PROVIDER,
                     operation="oauth2_token",
+                    error_code=DatabricksErrorConstants.ERR_OAUTH_MISSING_TOKEN,
+                    public_message=DatabricksErrorConstants.PUBLIC_AUTH_ERROR,
                 )
             cached_token = str(token)
             expires_at = now + ttl_seconds
@@ -169,8 +213,14 @@ class DatabricksEdhStrategy:
         transport: TransportCallable | None = None,
     ) -> None:
         if not config.endpoint_url or not config.endpoint_url.strip():
-            raise EdhConfigError(
-                "DatabricksEdhStrategy requires EdhConnectorConfig.endpoint_url (Databricks workspace URL)"
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DatabricksErrorConstants.MSG_MISSING_ENDPOINT,
+                provider=DatabricksErrorConstants.PROVIDER,
+                operation="init",
+                error_code=DatabricksErrorConstants.ERR_MISSING_ENDPOINT,
+                public_message=DatabricksErrorConstants.PUBLIC_CONFIG_ERROR,
             )
         self._config = config
         self._workspace_url = config.endpoint_url.rstrip("/")
@@ -203,11 +253,101 @@ class DatabricksEdhStrategy:
 
     def _validate_namespace(self, ref: EdhObjectRef) -> None:
         if ref.namespace != self._config.namespace:
-            raise EdhConfigError(
-                f"Namespace mismatch: connector bound to {self._config.namespace!r}, got {ref.namespace!r}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DatabricksErrorConstants.MSG_NAMESPACE_MISMATCH.format(
+                    expected=self._config.namespace,
+                    actual=ref.namespace,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="validate_namespace",
+                error_code=DatabricksErrorConstants.ERR_NAMESPACE_MISMATCH,
+                public_message=DatabricksErrorConstants.PUBLIC_CONFIG_ERROR,
             )
+
+    def _check_response(self, resp: RawHttpResponse, *, operation: str) -> None:
+        code = resp.status_code
+        if 200 <= code < 300:
+            return
+        dbx_code, detail = _extract_databricks_error_detail(resp.body)
+        formatted_msg = DatabricksErrorConstants.MSG_HTTP_ERROR.format(
+            operation=operation,
+            status_code=code,
+            dbx_code=dbx_code or f"HTTP_{code}",
+            detail=detail or "Databricks API error",
+        )
+        if code in (401, 403):
+            raise log_and_build_edh_error(
+                logger,
+                EdhAuthError,
+                formatted_msg,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=DatabricksErrorConstants.ERR_AUTH_FAILED,
+                public_message=DatabricksErrorConstants.PUBLIC_AUTH_ERROR,
+                upstream_status=code,
+            )
+        if code == 404:
+            raise log_and_build_edh_error(
+                logger,
+                EdhNotFoundError,
+                formatted_msg,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=DatabricksErrorConstants.ERR_RESOURCE_NOT_FOUND,
+                public_message=DatabricksErrorConstants.PUBLIC_NOT_FOUND,
+                upstream_status=code,
+                level=logging.WARNING,
+            )
+        if code in (409, 412):
+            raise log_and_build_edh_error(
+                logger,
+                EdhConflictError,
+                formatted_msg,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=DatabricksErrorConstants.ERR_RESOURCE_CONFLICT,
+                public_message=DatabricksErrorConstants.PUBLIC_CONFLICT,
+                upstream_status=code,
+                level=logging.WARNING,
+            )
+        if code == 429:
+            retry_after_raw = resp.header("retry-after")
+            retry_after = float(retry_after_raw) if retry_after_raw.replace(".", "", 1).isdigit() else None
+            raise log_and_build_edh_error(
+                logger,
+                EdhRateLimitError,
+                formatted_msg,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=DatabricksErrorConstants.ERR_RATE_LIMIT_EXCEEDED,
+                public_message=DatabricksErrorConstants.PUBLIC_RATE_LIMIT,
+                upstream_status=code,
+                retry_after_seconds=retry_after,
+                level=logging.WARNING,
+            )
+        if code in (408, 425) or 500 <= code < 600:
+            raise log_and_build_edh_error(
+                logger,
+                EdhTransientError,
+                formatted_msg,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=DatabricksErrorConstants.ERR_TRANSIENT_UPSTREAM,
+                public_message=DatabricksErrorConstants.PUBLIC_TRANSIENT_ERROR,
+                upstream_status=code,
+            )
+        raise log_and_build_edh_error(
+            logger,
+            EdhError,
+            formatted_msg,
+            provider=self.STRATEGY_NAME,
+            operation=operation,
+            error_code=DatabricksErrorConstants.ERR_UNEXPECTED_RESPONSE,
+            public_message=DatabricksErrorConstants.PUBLIC_UNEXPECTED_ERROR,
+            upstream_status=code,
+        )
 
     def _volume_file_path(self, ref: EdhObjectRef) -> str:
         self._validate_namespace(ref)
@@ -248,7 +388,7 @@ class DatabricksEdhStrategy:
             body,
             self._config.timeout_seconds,
         )
-        raise_for_status(resp, provider=self.STRATEGY_NAME, operation=operation)
+        self._check_response(resp, operation=operation)
         return resp
 
     def put_bytes(
@@ -267,10 +407,18 @@ class DatabricksEdhStrategy:
 
         digest = compute_sha256(payload)
         if opts.expected_sha256 and opts.expected_sha256.lower() != digest:
-            raise EdhIntegrityError(
-                f"SHA-256 mismatch on put_bytes for {ref.uri}: expected {opts.expected_sha256}, got {digest}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                DatabricksErrorConstants.MSG_SHA256_MISMATCH_WRITE.format(
+                    uri=ref.uri,
+                    expected=opts.expected_sha256,
+                    actual=digest,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="put_bytes",
+                error_code=DatabricksErrorConstants.ERR_SHA256_MISMATCH_WRITE,
+                public_message=DatabricksErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
 
         headers: dict[str, str] = {
@@ -318,16 +466,28 @@ class DatabricksEdhStrategy:
         )
         expected_sha = resp.headers.get("x-edh-sha256", "")
         if expected_sha and compute_sha256(resp.body) != expected_sha.lower():
-            raise EdhIntegrityError(
-                f"Databricks Unity Catalog file SHA-256 mismatch for {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                DatabricksErrorConstants.MSG_SHA256_MISMATCH_READ.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="get_bytes",
+                error_code=DatabricksErrorConstants.ERR_SHA256_MISMATCH_READ,
+                public_message=DatabricksErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
         return resp.body
 
     def stream_chunks(self, ref: EdhObjectRef, *, chunk_size: int = 65536) -> Iterator[bytes]:
         if chunk_size <= 0:
-            raise EdhConfigError("chunk_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DatabricksErrorConstants.MSG_INVALID_CHUNK_SIZE.format(chunk_size=chunk_size),
+                provider=self.STRATEGY_NAME,
+                operation="stream_chunks",
+                error_code=DatabricksErrorConstants.ERR_INVALID_CHUNK_SIZE,
+                public_message=DatabricksErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         payload = self.get_bytes(ref)
         for offset in range(0, len(payload), chunk_size):
             yield payload[offset : offset + chunk_size]
@@ -367,7 +527,15 @@ class DatabricksEdhStrategy:
         page_token: str | None = None,
     ) -> EdhListPage:
         if page_size <= 0:
-            raise EdhConfigError("page_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                DatabricksErrorConstants.MSG_INVALID_PAGE_SIZE.format(page_size=page_size),
+                provider=self.STRATEGY_NAME,
+                operation="list_objects",
+                error_code=DatabricksErrorConstants.ERR_INVALID_PAGE_SIZE,
+                public_message=DatabricksErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         clean_prefix = normalize_object_key(prefix) if prefix.strip() else ""
         base_vol_dir = f"/Volumes/{self._catalog}/{self._schema}/{self._volume}/{zone.value}"
         target_dir = f"{base_vol_dir}/{clean_prefix}".rstrip("/")
@@ -525,10 +693,18 @@ class DatabricksEdhStrategy:
         doc = json.loads(resp.body.decode("utf-8")) if resp.body else {}
         status_state = doc.get("status", {}).get("state", "SUCCEEDED")
         if status_state in {"FAILED", "CANCELED"}:
-            raise EdhTransientError(
-                f"Databricks SQL statement ended in state {status_state}",
+            err_detail = str(doc.get("status", {}).get("error", {}).get("message") or status_state)
+            raise log_and_build_edh_error(
+                logger,
+                EdhTransientError,
+                DatabricksErrorConstants.MSG_SQL_STATEMENT_FAILED.format(
+                    state=status_state,
+                    detail=err_detail,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="read_records",
+                error_code=DatabricksErrorConstants.ERR_SQL_STATEMENT_FAILED,
+                public_message=DatabricksErrorConstants.PUBLIC_TRANSIENT_ERROR,
             )
 
         columns = [

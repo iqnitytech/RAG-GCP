@@ -1,10 +1,12 @@
 """Salesforce SObject and ContentVersion constants for Backend integration tests.
 
 Modify ``SalesforceObjects`` below to target specific standard or custom
-Salesforce SObjects, filters, and file prefixes in your Salesforce org.
+Salesforce SObjects, filters, fields, and payloads in your Salesforce org.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 
 class SalesforceObjects:
@@ -24,6 +26,26 @@ class SalesforceObjects:
     # Active SObject and filter used by test_salesforce_edh_integration.py
     TARGET_SOBJECT: str = ACCOUNT
     TARGET_SOBJECT_FILTER: dict[str, str] = {}
+
+    # 2. Query & 3. PaginatedQuery & 9. BulkRead settings
+    SELECT_FIELDS: tuple[str, ...] = ("Id", "Name")
+    QUERY_LIMIT: int = 10
+    PAGINATED_BATCH_SIZE: int = 200
+
+    # 5. Create & 6. Update payloads
+    CREATE_PAYLOAD: dict[str, Any] = {"Name": "EDH Backend Integration Test Account"}
+    UPDATE_PAYLOAD: dict[str, Any] = {"Name": "EDH Backend Integration Test Account (Updated)"}
+
+    # 7. Upsert settings (populate UPSERT_EXTERNAL_ID_FIELD if testing Upsert against a custom External ID field)
+    UPSERT_EXTERNAL_ID_FIELD: str = ""
+    UPSERT_EXTERNAL_ID_VALUE: str = "EDH-BACKEND-EXT-001"
+    UPSERT_PAYLOAD: dict[str, Any] = {"Name": "EDH Backend Upsert Integration Test Account"}
+
+    # 10. BulkWrite records
+    BULK_WRITE_RECORDS: tuple[dict[str, Any], ...] = (
+        {"Name": "EDH Backend Bulk Account 1"},
+        {"Name": "EDH Backend Bulk Account 2"},
+    )
 
     # ContentVersion file listing and upload probe settings
     CONTENT_VERSION_PREFIX: str = ""

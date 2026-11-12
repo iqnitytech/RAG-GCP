@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
+import logging
 import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Callable, Mapping
 from urllib.parse import quote, urlsplit
 
@@ -26,7 +29,10 @@ from sdk.connectors.edh.errors import (
     EdhNotFoundError,
     EdhRateLimitError,
     EdhTransientError,
+    log_and_build_edh_error,
 )
+
+http_logger = logging.getLogger("sdk.edh.http")
 
 
 @dataclass(frozen=True)
@@ -90,10 +96,162 @@ def urllib_transport(
             body=err_body,
         )
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise EdhTransientError(
+        raise log_and_build_edh_error(
+            http_logger,
+            EdhTransientError,
             f"Network/timeout error on {method} {url}: {exc}",
+            provider="http_transport",
             operation=f"{method} {url}",
+            error_code="EDH_HTTP_NETWORK_TIMEOUT",
         ) from exc
+
+
+class HttpConnectionPool:
+    """Thread-safe HTTP/HTTPS connection manager built on ``http.client``.
+
+    Properly opens and reuses persistent connections while a session is open,
+    and closes all underlying sockets when :meth:`close` is called (or immediately
+    after a one-off request when called outside an explicit ``open()`` session).
+    """
+
+    def __init__(self, *, verify_tls: bool = True) -> None:
+        self._verify_tls = verify_tls
+        self._lock = Lock()
+        self._is_open = False
+        self._pool: dict[tuple[str, str, int, float], list[http.client.HTTPConnection]] = {}
+        self.open_count = 0
+        self.close_count = 0
+
+    @property
+    def is_open(self) -> bool:
+        with self._lock:
+            return self._is_open
+
+    @property
+    def active_connections(self) -> int:
+        with self._lock:
+            return sum(len(conns) for conns in self._pool.values())
+
+    def open(self) -> HttpConnectionPool:
+        """Open the connection pool session for persistent socket reuse."""
+        with self._lock:
+            if not self._is_open:
+                self._is_open = True
+                self.open_count += 1
+        return self
+
+    def close(self) -> None:
+        """Close all pooled HTTP/HTTPS connections and mark the session closed."""
+        with self._lock:
+            conns_to_close = [c for bucket in self._pool.values() for c in bucket]
+            self._pool.clear()
+            if self._is_open or conns_to_close:
+                self.close_count += 1
+            self._is_open = False
+
+        for conn in conns_to_close:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _create_connection(
+        self,
+        scheme: str,
+        host: str,
+        port: int,
+        timeout_seconds: float,
+    ) -> http.client.HTTPConnection:
+        if scheme == "https":
+            context = ssl.create_default_context()
+            if not self._verify_tls:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+            return http.client.HTTPSConnection(
+                host,
+                port,
+                timeout=timeout_seconds,
+                context=context,
+            )
+        return http.client.HTTPConnection(host, port, timeout=timeout_seconds)
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> RawHttpResponse:
+        """Execute an HTTP request, reusing pooled connections when open and closing when done."""
+        parsed = urlsplit(url)
+        scheme = (parsed.scheme or "https").lower()
+        host = parsed.hostname or "localhost"
+        port = parsed.port or (443 if scheme == "https" else 80)
+        target_path = parsed.path or "/"
+        if parsed.query:
+            target_path = f"{target_path}?{parsed.query}"
+
+        key = (scheme, host, port, float(timeout_seconds))
+        with self._lock:
+            keep_open = self._is_open
+            bucket = self._pool.get(key)
+            conn = bucket.pop() if bucket else None
+
+        if conn is None:
+            conn = self._create_connection(scheme, host, port, timeout_seconds)
+
+        req_headers = dict(headers)
+        req_headers.setdefault("Connection", "keep-alive" if keep_open else "close")
+
+        try:
+            try:
+                conn.request(method.upper(), target_path, body=body, headers=req_headers)
+                resp = conn.getresponse()
+            except (http.client.CannotSendRequest, http.client.BadStatusLine, ConnectionError):
+                # Reconnect once if a pooled keep-alive socket was closed by peer
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = self._create_connection(scheme, host, port, timeout_seconds)
+                conn.request(method.upper(), target_path, body=body, headers=req_headers)
+                resp = conn.getresponse()
+
+            resp_headers = {k.lower(): v for k, v in resp.getheaders()}
+            payload = resp.read() if method.upper() != "HEAD" else b""
+            raw_resp = RawHttpResponse(
+                status_code=int(resp.status),
+                headers=resp_headers,
+                body=payload,
+            )
+
+            with self._lock:
+                still_open = self._is_open
+                if still_open and keep_open and resp_headers.get("connection", "").lower() != "close":
+                    self._pool.setdefault(key, []).append(conn)
+                    conn = None
+            return raw_resp
+        except (TimeoutError, OSError, http.client.HTTPException) as exc:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
+            raise log_and_build_edh_error(
+                http_logger,
+                EdhTransientError,
+                f"Network/timeout error on {method} {url}: {exc}",
+                provider="http_pool",
+                operation=f"{method} {url}",
+                error_code="EDH_HTTP_NETWORK_TIMEOUT",
+            ) from exc
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
 def raise_for_status(

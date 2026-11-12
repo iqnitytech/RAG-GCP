@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from sdk.connectors.edh import (
+    AsyncEdhConnector,
     EdhConnector,
     EdhConnectorConfig,
     make_databricks_oauth_token_getter,
@@ -63,6 +64,14 @@ def salesforce_connector(integration_env: dict[str, str]) -> EdhConnector:
         auth_token_getter=token_getter,
     )
     return EdhConnector(cfg)
+
+
+@pytest.fixture
+def async_salesforce_connector(salesforce_connector: EdhConnector) -> AsyncEdhConnector:
+    return AsyncEdhConnector(
+        salesforce_connector.config,
+        strategy=salesforce_connector.strategy,
+    )
 
 
 @pytest.fixture

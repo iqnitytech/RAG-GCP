@@ -9,11 +9,23 @@ idempotency headers.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Iterator, Mapping
 from urllib.parse import quote, urlencode
 
-from sdk.connectors.edh.errors import EdhConfigError, EdhIntegrityError, EdhNotFoundError
+from sdk.connectors.edh.error_constants.ApiHubErrorConstants import ApiHubErrorConstants
+from sdk.connectors.edh.errors import (
+    EdhAuthError,
+    EdhConfigError,
+    EdhConflictError,
+    EdhError,
+    EdhIntegrityError,
+    EdhNotFoundError,
+    EdhRateLimitError,
+    EdhTransientError,
+    log_and_build_edh_error,
+)
 from sdk.models.edh_models import (
     DataZone,
     EdhConnectorConfig,
@@ -29,11 +41,12 @@ from sdk.models.edh_models import (
 from sdk.connectors.edh.strategies._http import (
     RawHttpResponse,
     TransportCallable,
-    raise_for_status,
     urllib_transport,
 )
 from sdk.connectors.edh.strategies._serde import deserialize_records, serialize_records
 from sdk.logging.context import get_request_id
+
+logger = logging.getLogger("sdk.edh.api_hub")
 
 _META_HEADER_PREFIX = "x-edh-meta-"
 
@@ -50,7 +63,15 @@ class ApiDrivenEdhStrategy:
         transport: TransportCallable | None = None,
     ) -> None:
         if not config.endpoint_url or not config.endpoint_url.strip():
-            raise EdhConfigError("ApiDrivenEdhStrategy requires EdhConnectorConfig.endpoint_url")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                ApiHubErrorConstants.MSG_MISSING_ENDPOINT,
+                provider=ApiHubErrorConstants.PROVIDER,
+                operation="init",
+                error_code=ApiHubErrorConstants.ERR_MISSING_ENDPOINT,
+                public_message=ApiHubErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         self._config = config
         self._endpoint = config.endpoint_url.rstrip("/")
         self._transport: TransportCallable = transport or (
@@ -70,11 +91,111 @@ class ApiDrivenEdhStrategy:
 
     def _validate_namespace(self, ref: EdhObjectRef) -> None:
         if ref.namespace != self._config.namespace:
-            raise EdhConfigError(
-                f"Namespace mismatch: connector bound to {self._config.namespace!r}, got {ref.namespace!r}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                ApiHubErrorConstants.MSG_NAMESPACE_MISMATCH.format(
+                    expected=self._config.namespace,
+                    actual=ref.namespace,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="validate_namespace",
+                error_code=ApiHubErrorConstants.ERR_NAMESPACE_MISMATCH,
+                public_message=ApiHubErrorConstants.PUBLIC_CONFIG_ERROR,
             )
+
+    def _check_response(self, resp: RawHttpResponse, *, operation: str) -> None:
+        code = resp.status_code
+        if 200 <= code < 300:
+            return
+        raw = resp.body.decode("utf-8", errors="replace").strip() if resp.body else ""
+        hub_code = f"HTTP_{code}"
+        detail = raw[:300] or "API Hub request failed"
+        if raw:
+            try:
+                doc = json.loads(raw)
+                if isinstance(doc, Mapping):
+                    hub_code = str(doc.get("error_code") or doc.get("code") or hub_code)
+                    detail = str(doc.get("message") or doc.get("detail") or detail)
+            except Exception:
+                pass
+        formatted = ApiHubErrorConstants.MSG_HTTP_ERROR.format(
+            operation=operation,
+            status_code=code,
+            hub_code=hub_code,
+            detail=detail,
+        )
+        if code in (401, 403):
+            raise log_and_build_edh_error(
+                logger,
+                EdhAuthError,
+                formatted,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=ApiHubErrorConstants.ERR_AUTH_FAILED,
+                public_message=ApiHubErrorConstants.PUBLIC_AUTH_ERROR,
+                upstream_status=code,
+            )
+        if code == 404:
+            raise log_and_build_edh_error(
+                logger,
+                EdhNotFoundError,
+                formatted,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=ApiHubErrorConstants.ERR_NOT_FOUND,
+                public_message=ApiHubErrorConstants.PUBLIC_NOT_FOUND,
+                upstream_status=code,
+                level=logging.WARNING,
+            )
+        if code in (409, 412):
+            raise log_and_build_edh_error(
+                logger,
+                EdhConflictError,
+                formatted,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=ApiHubErrorConstants.ERR_CONFLICT,
+                public_message=ApiHubErrorConstants.PUBLIC_CONFLICT,
+                upstream_status=code,
+                level=logging.WARNING,
+            )
+        if code == 429:
+            retry_after_raw = resp.header("retry-after")
+            retry_after = float(retry_after_raw) if retry_after_raw.replace(".", "", 1).isdigit() else None
+            raise log_and_build_edh_error(
+                logger,
+                EdhRateLimitError,
+                formatted,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=ApiHubErrorConstants.ERR_RATE_LIMIT_EXCEEDED,
+                public_message=ApiHubErrorConstants.PUBLIC_RATE_LIMIT,
+                upstream_status=code,
+                retry_after_seconds=retry_after,
+                level=logging.WARNING,
+            )
+        if code in (408, 425) or 500 <= code < 600:
+            raise log_and_build_edh_error(
+                logger,
+                EdhTransientError,
+                formatted,
+                provider=self.STRATEGY_NAME,
+                operation=operation,
+                error_code=ApiHubErrorConstants.ERR_TRANSIENT_UPSTREAM,
+                public_message=ApiHubErrorConstants.PUBLIC_TRANSIENT_ERROR,
+                upstream_status=code,
+            )
+        raise log_and_build_edh_error(
+            logger,
+            EdhError,
+            formatted,
+            provider=self.STRATEGY_NAME,
+            operation=operation,
+            error_code=ApiHubErrorConstants.ERR_UNEXPECTED_RESPONSE,
+            public_message=ApiHubErrorConstants.PUBLIC_UNEXPECTED_ERROR,
+            upstream_status=code,
+        )
 
     def _object_url(self, ref: EdhObjectRef) -> str:
         self._validate_namespace(ref)
@@ -136,7 +257,7 @@ class ApiDrivenEdhStrategy:
             body,
             self._config.timeout_seconds,
         )
-        raise_for_status(resp, provider=self.STRATEGY_NAME, operation=operation)
+        self._check_response(resp, operation=operation)
         return resp
 
     def put_bytes(
@@ -156,10 +277,18 @@ class ApiDrivenEdhStrategy:
 
         digest = compute_sha256(payload)
         if opts.expected_sha256 and opts.expected_sha256.lower() != digest:
-            raise EdhIntegrityError(
-                f"SHA-256 mismatch on put_bytes for {ref.uri}: expected {opts.expected_sha256}, got {digest}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                ApiHubErrorConstants.MSG_SHA256_MISMATCH_WRITE.format(
+                    uri=ref.uri,
+                    expected=opts.expected_sha256,
+                    actual=digest,
+                ),
                 provider=self.STRATEGY_NAME,
                 operation="put_bytes",
+                error_code=ApiHubErrorConstants.ERR_SHA256_MISMATCH_WRITE,
+                public_message=ApiHubErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
 
         headers: dict[str, str] = {
@@ -202,16 +331,28 @@ class ApiDrivenEdhStrategy:
         resp = self._request("GET", self._object_url(ref), operation="get_bytes")
         expected_sha = resp.header("x-edh-sha256")
         if expected_sha and compute_sha256(resp.body) != expected_sha.lower():
-            raise EdhIntegrityError(
-                f"API Hub payload SHA-256 mismatch for {ref.uri}",
+            raise log_and_build_edh_error(
+                logger,
+                EdhIntegrityError,
+                ApiHubErrorConstants.MSG_SHA256_MISMATCH_READ.format(uri=ref.uri),
                 provider=self.STRATEGY_NAME,
                 operation="get_bytes",
+                error_code=ApiHubErrorConstants.ERR_SHA256_MISMATCH_READ,
+                public_message=ApiHubErrorConstants.PUBLIC_INTEGRITY_ERROR,
             )
         return resp.body
 
     def stream_chunks(self, ref: EdhObjectRef, *, chunk_size: int = 65536) -> Iterator[bytes]:
         if chunk_size <= 0:
-            raise EdhConfigError("chunk_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                ApiHubErrorConstants.MSG_INVALID_CHUNK_SIZE.format(chunk_size=chunk_size),
+                provider=self.STRATEGY_NAME,
+                operation="stream_chunks",
+                error_code=ApiHubErrorConstants.ERR_INVALID_CHUNK_SIZE,
+                public_message=ApiHubErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         payload = self.get_bytes(ref)
         for offset in range(0, len(payload), chunk_size):
             yield payload[offset : offset + chunk_size]
@@ -256,7 +397,15 @@ class ApiDrivenEdhStrategy:
         page_token: str | None = None,
     ) -> EdhListPage:
         if page_size <= 0:
-            raise EdhConfigError("page_size must be > 0")
+            raise log_and_build_edh_error(
+                logger,
+                EdhConfigError,
+                ApiHubErrorConstants.MSG_INVALID_PAGE_SIZE.format(page_size=page_size),
+                provider=self.STRATEGY_NAME,
+                operation="list_objects",
+                error_code=ApiHubErrorConstants.ERR_INVALID_PAGE_SIZE,
+                public_message=ApiHubErrorConstants.PUBLIC_CONFIG_ERROR,
+            )
         clean_prefix = normalize_object_key(prefix) if prefix.strip() else ""
         query: dict[str, str] = {"page_size": str(page_size)}
         if clean_prefix:
