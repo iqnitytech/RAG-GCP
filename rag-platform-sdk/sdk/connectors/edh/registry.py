@@ -15,6 +15,7 @@ from sdk.models.edh_models import EdhConnectorConfig
 from sdk.connectors.edh.ports import EdhStrategyPort
 from sdk.connectors.edh.strategies.api_hub import ApiDrivenEdhStrategy
 from sdk.connectors.edh.strategies.data_lake import DataLakeStrategy
+from sdk.connectors.edh.strategies.databricks import DatabricksEdhStrategy
 from sdk.connectors.edh.strategies.memory import InMemoryEdhStrategy
 from sdk.connectors.edh.strategies.object_storage_hub import ObjectStorageHubStrategy
 from sdk.connectors.edh.strategies.salesforce import SalesforceEdhStrategy
@@ -90,6 +91,11 @@ def create_default_registry() -> EdhStrategyRegistry:
         SalesforceEdhStrategy.STRATEGY_NAME,
         SalesforceEdhStrategy,
         aliases=("sfdc", "salesforce_crm"),
+    )
+    registry.register(
+        DatabricksEdhStrategy.STRATEGY_NAME,
+        DatabricksEdhStrategy,
+        aliases=("databricks_uc", "unity_catalog", "dbx"),
     )
     return registry
 

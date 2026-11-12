@@ -162,6 +162,40 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SF_TEST_SOBJECT", "sf_test_sobject"),
     )
 
+    # Databricks EDH Connector (optional; secrets injected via Secret Manager in production)
+    databricks_host: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_HOST", "databricks_host"),
+    )
+    databricks_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DATABRICKS_TOKEN", "databricks_token"),
+    )
+    databricks_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_CLIENT_ID", "databricks_client_id"),
+    )
+    databricks_client_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("DATABRICKS_CLIENT_SECRET", "databricks_client_secret"),
+    )
+    databricks_warehouse_id: str = Field(
+        default="default",
+        validation_alias=AliasChoices("DATABRICKS_WAREHOUSE_ID", "databricks_warehouse_id"),
+    )
+    databricks_catalog: str = Field(
+        default="main",
+        validation_alias=AliasChoices("DATABRICKS_CATALOG", "databricks_catalog"),
+    )
+    databricks_schema: str = Field(
+        default="default",
+        validation_alias=AliasChoices("DATABRICKS_SCHEMA", "databricks_schema"),
+    )
+    databricks_test_table: str = Field(
+        default="rag_chunks",
+        validation_alias=AliasChoices("DATABRICKS_TEST_TABLE", "databricks_test_table"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=resolve_env_file(),
         env_file_encoding="utf-8",
@@ -184,6 +218,38 @@ class Settings(BaseSettings):
     @property
     def SF_TEST_SOBJECT(self) -> str:
         return self.sf_test_sobject
+
+    @property
+    def DATABRICKS_HOST(self) -> str:
+        return self.databricks_host
+
+    @property
+    def DATABRICKS_TOKEN(self) -> SecretStr:
+        return self.databricks_token
+
+    @property
+    def DATABRICKS_CLIENT_ID(self) -> str:
+        return self.databricks_client_id
+
+    @property
+    def DATABRICKS_CLIENT_SECRET(self) -> SecretStr:
+        return self.databricks_client_secret
+
+    @property
+    def DATABRICKS_WAREHOUSE_ID(self) -> str:
+        return self.databricks_warehouse_id
+
+    @property
+    def DATABRICKS_CATALOG(self) -> str:
+        return self.databricks_catalog
+
+    @property
+    def DATABRICKS_SCHEMA(self) -> str:
+        return self.databricks_schema
+
+    @property
+    def DATABRICKS_TEST_TABLE(self) -> str:
+        return self.databricks_test_table
 
     @property
     def is_production(self) -> bool:

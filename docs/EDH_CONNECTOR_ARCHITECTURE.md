@@ -100,7 +100,15 @@ flowchart TB
   - **Structured SObject records (`write_records` / `read_records`):** Uses Composite sObjects Collections (`POST /services/data/<version>/composite/sobjects`) and SOQL queries (`GET /services/data/<version>/query?q=...`) with automatic `nextRecordsUrl` pagination and strict identifier/literal escaping against SOQL injection.
   - **OAuth2 helper (`make_salesforce_oauth_token_getter`):** Thread-safe `client_credentials` token exchange against `<instance_url>/services/oauth2/token` with in-memory TTL caching.
 
-### 3.5 `InMemoryEdhStrategy` (`strategy="memory"`)
+### 3.5 `DatabricksEdhStrategy` (`strategy="databricks"` / `"databricks_uc"` / `"unity_catalog"` / `"dbx"`)
+- **Use case:** Direct Databricks Lakehouse / Unity Catalog Volumes & SQL Warehouse integration over REST API v2.0 without third-party dependencies (`databricks-sdk` not required).
+- **Python Core Modules:** `urllib.request`, `ssl`, `json`, `gzip`, `hashlib`, `urllib.parse`.
+- **Key Features:**
+  - **Unity Catalog Volumes (`put_bytes`, `get_bytes`, `stream_chunks`, `head`, `delete`, `list_objects`):** Maps blobs to `/api/2.0/fs/files/Volumes/<catalog>/<schema>/<volume>/<zone>/<key>` and directory listings to `/api/2.0/fs/directories/Volumes/...` with SHA-256 verification and `overwrite=false` conflict protection.
+  - **Databricks SQL Statement Execution (`write_records` / `read_records`):** Executes `INSERT INTO <catalog>.<schema>.<table>` and `SELECT * FROM <catalog>.<schema>.<table>` via `POST /api/2.0/sql/statements` with automatic multi-chunk pagination (`next_chunk_internal_link`) and strict Unity Catalog identifier/literal escaping against SQL injection.
+  - **OAuth2 M2M helper (`make_databricks_oauth_token_getter`):** Thread-safe Service Principal `client_credentials` token exchange against `<workspace_url>/oidc/v1/token` (`scope=all-apis`), alongside Personal Access Token (`DATABRICKS_TOKEN`) support.
+
+### 3.6 `InMemoryEdhStrategy` (`strategy="memory"`)
 - **Use case:** Fast, deterministic unit and contract testing without network or filesystem I/O.
 
 ---
