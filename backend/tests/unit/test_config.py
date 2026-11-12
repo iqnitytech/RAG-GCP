@@ -41,6 +41,9 @@ def test_unsafe_production_config_is_rejected(override):
 def test_env_file_selection(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     assert resolve_env_file().name == ".env.production"
+    monkeypatch.setenv("APP_ENV", "integration")
+    assert resolve_env_file().name == ".env.integration"
     monkeypatch.setenv("APP_ENV", "development")
     assert resolve_env_file().name == ".env.local"
+
 

@@ -9,21 +9,29 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 PRODUCTION_ENVS = {"prod", "production"}
+INTEGRATION_ENVS = {"int", "integration", "test_integration"}
 
 
 def resolve_env_file() -> Path:
     """
     Pick the dotenv file for the current runtime.
 
-    * APP_ENV=prod|production -> .env.production (non-secret config only)
-    * anything else (default)  -> .env.local
+    * APP_ENV=prod|production            -> .env.production (non-secret config only)
+    * APP_ENV=int|integration|...        -> .env.integration (integration test config)
+    * anything else (default)            -> .env.local
 
-    APP_ENV is read from the real process environment so a deployment can
-    select its file without any file needing to exist. Real environment
-    variables (e.g. Cloud Run secrets) always override values from the file.
+    APP_ENV is read from the real process environment so a deployment or test
+    runner can select its file without any file needing to exist. Real
+    environment variables (e.g. Cloud Run secrets) always override values from
+    the file.
     """
     app_env = os.getenv("APP_ENV", "development").strip().lower()
-    name = ".env.production" if app_env in PRODUCTION_ENVS else ".env.local"
+    if app_env in PRODUCTION_ENVS:
+        name = ".env.production"
+    elif app_env in INTEGRATION_ENVS:
+        name = ".env.integration"
+    else:
+        name = ".env.local"
     return BACKEND_ROOT / name
 
 
@@ -136,12 +144,46 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("RATE_LIMIT_PER_MINUTE", "rate_limit_per_minute"),
     )
 
+    # Salesforce EDH Connector (optional; secret injected via Secret Manager in production)
+    sf_instance_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("SF_INSTANCE_URL", "sf_instance_url"),
+    )
+    sf_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("SF_CLIENT_ID", "sf_client_id"),
+    )
+    sf_client_secret: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("SF_CLIENT_SECRET", "sf_client_secret"),
+    )
+    sf_test_sobject: str = Field(
+        default="Account",
+        validation_alias=AliasChoices("SF_TEST_SOBJECT", "sf_test_sobject"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=resolve_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
     )
+
+    @property
+    def SF_INSTANCE_URL(self) -> str:
+        return self.sf_instance_url
+
+    @property
+    def SF_CLIENT_ID(self) -> str:
+        return self.sf_client_id
+
+    @property
+    def SF_CLIENT_SECRET(self) -> SecretStr:
+        return self.sf_client_secret
+
+    @property
+    def SF_TEST_SOBJECT(self) -> str:
+        return self.sf_test_sobject
 
     @property
     def is_production(self) -> bool:
@@ -178,3 +220,15 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_integration_settings() -> Settings:
+    """Load settings from ``backend/tests/integration/.env.integration`` (with fallbacks)."""
+    candidates = (
+        BACKEND_ROOT / ".env.local",
+        BACKEND_ROOT / ".env.integration",
+        BACKEND_ROOT / "tests" / "integration" / ".env.integration",
+    )
+    env_files = tuple(p for p in candidates if p.exists())
+    return Settings(_env_file=env_files or None)
+
