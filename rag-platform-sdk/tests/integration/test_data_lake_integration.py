@@ -1,4 +1,4 @@
-"""Disk integration tests for ``DataLakeStrategy`` Medallion zone promotion."""
+"""Disk integration tests for ``DataLakeStrategy`` using ``constants.py`` and ``.env.integration``."""
 
 from __future__ import annotations
 
@@ -10,27 +10,39 @@ from sdk.connectors.edh import (
     EdhWriteOptions,
     RecordFormat,
 )
+from tests.integration.constants import (
+    DATA_LAKE_DATASET,
+    DATA_LAKE_PARTITION_VALUES,
+    DATA_LAKE_QUARANTINE_KEY,
+    DATA_LAKE_RAW_KEY,
+    DATA_LAKE_RECORDS,
+    DATA_LAKE_SAMPLE_PDF_BYTES,
+    DEFAULT_NAMESPACE,
+)
 
 
-def test_integration_data_lake_medallion_zone_promotion_on_disk(tmp_path):
-    """End-to-end Medallion workflow: QUARANTINE -> RAW -> CURATED (Gzipped CSV & JSONL)."""
+def test_integration_data_lake_medallion_zone_promotion_on_disk(
+    tmp_path,
+    integration_env: dict[str, str],
+):
+    """End-to-end Medallion workflow: QUARANTINE -> RAW -> CURATED using constants.py."""
+    namespace = integration_env.get("EDH_NAMESPACE", DEFAULT_NAMESPACE)
     cfg = EdhConnectorConfig(
         strategy="data_lake",
-        namespace="enterprise-lake",
+        namespace=namespace,
         root_path=str(tmp_path / "edh_lake"),
     )
 
     with EdhConnector(cfg) as lake:
-        raw_pdf = b"%PDF-1.4 scanned invoice #9001"
         q_meta = lake.put_bytes(
-            "uploads/inv_9001.pdf",
-            raw_pdf,
+            DATA_LAKE_QUARANTINE_KEY,
+            DATA_LAKE_SAMPLE_PDF_BYTES,
             zone=DataZone.QUARANTINE,
             options=EdhWriteOptions(content_type="application/pdf"),
         )
         scanned_bytes = b"".join(lake.stream_chunks(q_meta.ref, chunk_size=8))
         lake.put_bytes(
-            "invoices/2026/inv_9001.pdf",
+            DATA_LAKE_RAW_KEY,
             scanned_bytes,
             zone=DataZone.RAW,
             options=EdhWriteOptions(
@@ -41,12 +53,9 @@ def test_integration_data_lake_medallion_zone_promotion_on_disk(tmp_path):
         lake.delete(q_meta.ref)
 
         batch = EdhRecordBatch(
-            dataset="invoice_chunks",
-            records=(
-                {"chunk_id": "inv-1", "amount": "1500.00", "currency": "USD"},
-                {"chunk_id": "inv-2", "amount": "250.00", "currency": "USD"},
-            ),
-            partition_values={"year": "2026", "status": "verified"},
+            dataset=DATA_LAKE_DATASET,
+            records=DATA_LAKE_RECORDS,
+            partition_values=DATA_LAKE_PARTITION_VALUES,
             zone=DataZone.CURATED,
             record_format=RecordFormat.CSV,
         )
@@ -54,12 +63,11 @@ def test_integration_data_lake_medallion_zone_promotion_on_disk(tmp_path):
 
         records = list(
             lake.read_records(
-                "invoice_chunks",
+                DATA_LAKE_DATASET,
                 zone=DataZone.CURATED,
-                partition_filter={"year": "2026", "status": "verified"},
+                partition_filter=DATA_LAKE_PARTITION_VALUES,
                 record_format=RecordFormat.CSV,
             )
         )
-        assert len(records) == 2
-        assert records[0]["chunk_id"] == "inv-1"
-        assert records[1]["amount"] == "250.00"
+        assert len(records) == len(DATA_LAKE_RECORDS)
+        assert records[0]["chunk_id"] == DATA_LAKE_RECORDS[0]["chunk_id"]

@@ -1,4 +1,8 @@
-"""Backend integration tests combining FastAPI upload routes, security middleware, and the EDH Data Lake connector."""
+"""Backend integration tests combining FastAPI upload routes, security middleware, and the EDH Data Lake connector.
+
+Uses object names and payloads from ``backend/tests/integration/constants.py`` and
+settings from ``backend/tests/integration/.env.integration``.
+"""
 
 from __future__ import annotations
 
@@ -7,20 +11,26 @@ from typing import BinaryIO
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 
 from app.connectors import create_edh_connector
-from app.core.config import get_settings
+from app.core.config import get_integration_settings
 from app.core.security import reset_rate_limiter
 from app.dependencies import get_storage_service_dependency
 from app.main import app
 from app.models.edh_models import DataZone, EdhWriteOptions, compute_sha256
 from app.models.service_models import UploadResult
 from app.services.storage.storage_service import StorageServiceError
+from tests.integration.constants import (
+    UPLOAD_LIST_PREFIX,
+    UPLOAD_REQUEST_ID,
+    UPLOAD_TEST_CONTENT_TYPE,
+    UPLOAD_TEST_FILENAME,
+    UPLOAD_TEST_PDF_BYTES,
+)
 
 
 class EdhBackedStorageService:
-    """Integration adapter bridging ``StorageService`` to a real disk-backed ``EdhConnector``."""
+    """Integration adapter bridging ``StorageService`` to a disk-backed ``EdhConnector``."""
 
     def __init__(self, edh_connector) -> None:
         self.edh = edh_connector
@@ -60,9 +70,8 @@ class EdhBackedStorageService:
 
 
 @pytest.fixture
-def edh_storage(tmp_path, monkeypatch):
-    settings = get_settings()
-    monkeypatch.setattr(settings, "gcs_document_bucket", "rag-docs")
+def edh_storage(tmp_path):
+    settings = get_integration_settings()
     connector = create_edh_connector(
         settings,
         strategy="data_lake",
@@ -73,9 +82,9 @@ def edh_storage(tmp_path, monkeypatch):
 
 @pytest.fixture
 def integration_client(edh_storage, monkeypatch):
-    settings = get_settings()
-    monkeypatch.setattr(settings, "api_key", SecretStr("integration-secret-key"))
-    monkeypatch.setattr(settings, "rate_limit_per_minute", 10)
+    int_settings = get_integration_settings()
+    monkeypatch.setattr("app.core.config.get_settings", lambda: int_settings)
+    monkeypatch.setattr("app.core.security.get_settings", lambda: int_settings)
     reset_rate_limiter()
     app.dependency_overrides[get_storage_service_dependency] = lambda: edh_storage
     monkeypatch.setattr("app.main.get_storage_service", lambda: edh_storage)
@@ -85,30 +94,34 @@ def integration_client(edh_storage, monkeypatch):
 
 
 def test_end_to_end_upload_persists_into_edh_data_lake(integration_client, edh_storage):
-    pdf_bytes = b"%PDF-1.7\nEnterprise architecture specification document."
+    int_settings = get_integration_settings()
+    api_key = int_settings.api_key.get_secret_value()
     resp = integration_client.post(
         "/documents/upload",
-        files={"file": ("Architecture Spec 2026.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
-        headers={"X-API-Key": "integration-secret-key", "X-Request-ID": "int-req-101"},
+        files={"file": (UPLOAD_TEST_FILENAME, io.BytesIO(UPLOAD_TEST_PDF_BYTES), UPLOAD_TEST_CONTENT_TYPE)},
+        headers={"X-API-Key": api_key, "X-Request-ID": UPLOAD_REQUEST_ID},
     )
     assert resp.status_code == 201, resp.text
-    assert resp.headers["x-request-id"] == "int-req-101"
+    assert resp.headers["x-request-id"] == UPLOAD_REQUEST_ID
 
     body = resp.json()
-    assert body["filename"] == "Architecture Spec 2026.pdf"
-    assert body["size_bytes"] == len(pdf_bytes)
+    assert body["filename"] == UPLOAD_TEST_FILENAME
+    assert body["size_bytes"] == len(UPLOAD_TEST_PDF_BYTES)
     assert body["storage"]["gs_url"].startswith("edh://")
 
-    page = edh_storage.edh.list_objects(zone=DataZone.RAW, prefix="documents/")
+    page = edh_storage.edh.list_objects(zone=DataZone.RAW, prefix=UPLOAD_LIST_PREFIX)
     assert len(page.items) == 1
     stored_meta = page.items[0]
-    assert stored_meta.size_bytes == len(pdf_bytes)
-    assert stored_meta.sha256 == compute_sha256(pdf_bytes)
-    assert stored_meta.custom_metadata.get("original_filename") == "Architecture Spec 2026.pdf"
-    assert edh_storage.edh.get_bytes(stored_meta.ref) == pdf_bytes
+    assert stored_meta.size_bytes == len(UPLOAD_TEST_PDF_BYTES)
+    assert stored_meta.sha256 == compute_sha256(UPLOAD_TEST_PDF_BYTES)
+    assert stored_meta.custom_metadata.get("original_filename") == UPLOAD_TEST_FILENAME
+    assert edh_storage.edh.get_bytes(stored_meta.ref) == UPLOAD_TEST_PDF_BYTES
 
 
 def test_integration_ready_probe_and_failure_handling(integration_client, edh_storage):
+    int_settings = get_integration_settings()
+    api_key = int_settings.api_key.get_secret_value()
+
     assert integration_client.get("/health").status_code == 200
     assert integration_client.get("/ready").status_code == 200
 
@@ -118,7 +131,7 @@ def test_integration_ready_probe_and_failure_handling(integration_client, edh_st
     r_fail = integration_client.post(
         "/documents/upload",
         files={"file": ("notes.txt", io.BytesIO(b"hello world"), "text/plain")},
-        headers={"X-API-Key": "integration-secret-key"},
+        headers={"X-API-Key": api_key},
     )
     assert r_fail.status_code == 503
     assert "unavailable" in r_fail.json()["detail"].lower()
