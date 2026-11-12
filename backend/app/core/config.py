@@ -157,6 +157,14 @@ class Settings(BaseSettings):
         default=SecretStr(""),
         validation_alias=AliasChoices("SF_CLIENT_SECRET", "sf_client_secret"),
     )
+    sf_api_version: str = Field(
+        default="v60.0",
+        validation_alias=AliasChoices("SF_API_VERSION", "sf_api_version"),
+    )
+    sf_access_token: SecretStr = Field(
+        default=SecretStr(""),
+        validation_alias=AliasChoices("SF_ACCESS_TOKEN", "sf_access_token"),
+    )
 
     # Databricks EDH Connector (optional; secrets injected via Secret Manager in production)
     databricks_host: str = Field(
@@ -210,6 +218,36 @@ class Settings(BaseSettings):
     @property
     def SF_CLIENT_SECRET(self) -> SecretStr:
         return self.sf_client_secret
+
+    @property
+    def SF_API_VERSION(self) -> str:
+        return self.sf_api_version
+
+    @property
+    def SF_ACCESS_TOKEN(self) -> SecretStr:
+        return self.sf_access_token
+
+    @property
+    def is_salesforce_configured(self) -> bool:
+        """Return True if real (non-placeholder) Salesforce credentials are configured."""
+        url = self.sf_instance_url.strip()
+        if not url or "your-org" in url.lower() or url.startswith("<"):
+            return False
+        token = self.sf_access_token.get_secret_value().strip()
+        if token and not token.lower().startswith("your-") and not token.startswith("<"):
+            return True
+        cid = self.sf_client_id.strip()
+        csec = self.sf_client_secret.get_secret_value().strip()
+        if (
+            cid
+            and csec
+            and not cid.lower().startswith("your-")
+            and not csec.lower().startswith("your-")
+            and not cid.startswith("<")
+            and not csec.startswith("<")
+        ):
+            return True
+        return False
 
     @property
     def DATABRICKS_HOST(self) -> str:

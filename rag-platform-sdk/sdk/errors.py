@@ -79,9 +79,12 @@ class EdhConfigError(BadRequestError, EdhError):
 
 
 
-def _error_body(request: Request, detail: str) -> dict:
+def _error_body(request: Request, detail: str, *, error_code: str = "") -> dict:
     request_id = getattr(request.state, "request_id", None) or get_request_id()
-    return {"detail": detail, "request_id": request_id}
+    body = {"detail": detail, "request_id": request_id}
+    if error_code:
+        body["error_code"] = error_code
+    return body
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -89,10 +92,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError):
+        err_code = getattr(exc, "error_code", "") or ""
         logger.error("%s on %s %s: %s", type(exc).__name__, request.method, request.url.path, exc)
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_body(request, exc.public_message),
+            content=_error_body(request, exc.public_message, error_code=err_code),
         )
 
     @app.exception_handler(Exception)

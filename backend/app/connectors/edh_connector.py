@@ -51,18 +51,20 @@ def create_edh_connector(
     effective_token_getter = auth_token_getter
     default_headers: dict[str, str] = {}
 
-    if (
-        effective_token_getter is None
-        and norm_strategy in _SALESFORCE_STRATEGIES
-        and effective_endpoint
-        and resolved.SF_CLIENT_ID
-        and resolved.SF_CLIENT_SECRET.get_secret_value()
-    ):
-        effective_token_getter = make_salesforce_oauth_token_getter(
-            instance_url=effective_endpoint,
-            client_id_getter=lambda: resolved.SF_CLIENT_ID,
-            client_secret_getter=lambda: resolved.SF_CLIENT_SECRET.get_secret_value(),
-        )
+    if effective_token_getter is None and norm_strategy in _SALESFORCE_STRATEGIES:
+        access_token = resolved.SF_ACCESS_TOKEN.get_secret_value().strip()
+        if access_token and not access_token.lower().startswith("your-"):
+            effective_token_getter = lambda: resolved.SF_ACCESS_TOKEN.get_secret_value()
+        elif (
+            effective_endpoint
+            and resolved.SF_CLIENT_ID
+            and resolved.SF_CLIENT_SECRET.get_secret_value()
+        ):
+            effective_token_getter = make_salesforce_oauth_token_getter(
+                instance_url=effective_endpoint,
+                client_id_getter=lambda: resolved.SF_CLIENT_ID,
+                client_secret_getter=lambda: resolved.SF_CLIENT_SECRET.get_secret_value(),
+            )
     elif norm_strategy in _DATABRICKS_STRATEGIES:
         default_headers = {
             "X-Databricks-Catalog": resolved.DATABRICKS_CATALOG,

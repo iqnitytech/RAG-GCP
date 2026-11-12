@@ -7,6 +7,7 @@ from sdk import __version__ as sdk_version
 from sdk import create_base_app, require_sdk_version
 
 from app.api.documents.documents import router as documents_router
+from app.api.salesforce.salesforce import router as salesforce_router
 from app.core.config import get_settings
 from app.models.request.validations.document_upload_validation import MAX_REQUEST_SIZE
 from app.services.storage.storage_service import get_storage_service
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(documents_router)
+    app.include_router(salesforce_router)
     return app
 
 
