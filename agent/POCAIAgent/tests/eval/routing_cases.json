@@ -1,0 +1,56 @@
+{
+  "description": "Routing evaluation set. 'agents' must all be used; 'forbid' must not be used; 'exact' requires used == agents; 'skills' must be among the selected skills. tier 'llm' cases need a real LLM (Vertex) and are skipped with the mock.",
+  "cases": [
+    {"q": "status of machine M-1", "agents": ["machine"], "forbid": ["customer", "telemetry"], "skills": ["machine.get_machine"]},
+    {"q": "show details for machine M-2", "agents": ["machine"], "forbid": ["customer"]},
+    {"q": "what is the status of M-3", "agents": ["machine"], "forbid": ["customer", "telemetry"]},
+    {"q": "list machines for customer C-1", "agents": ["machine"], "forbid": ["telemetry"]},
+    {"q": "which machines does C-2 own", "agents": ["machine"], "forbid": ["telemetry"]},
+    {"q": "equipment status for M-1", "agents": ["machine"], "forbid": ["customer", "telemetry"]},
+
+    {"q": "details of customer C-1", "agents": ["customer"], "forbid": ["telemetry"], "skills": ["customer.get_customer"]},
+    {"q": "what tier is C-2", "agents": ["customer"], "forbid": ["machine", "telemetry"]},
+    {"q": "find customer named Acme", "agents": ["customer"], "forbid": ["telemetry"], "skills": ["customer.search_customers"]},
+    {"q": "search customers matching Globex", "agents": ["customer"], "forbid": ["machine", "telemetry"]},
+    {"q": "lookup account Acme", "agents": ["customer"], "forbid": ["telemetry"]},
+    {"q": "customer tier for C-1", "agents": ["customer"], "forbid": ["telemetry"]},
+
+    {"q": "latest readings for M-1", "agents": ["telemetry"], "forbid": ["customer"], "skills": ["telemetry.latest_readings"]},
+    {"q": "how hot is machine M-3", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "any anomalies on M-2", "agents": ["telemetry"], "forbid": ["customer"], "skills": ["telemetry.anomalies"]},
+    {"q": "is machine M-2 overheating", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "show vibration for M-1", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "temperature of M-3", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "sensor alerts for M-2", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "tele M-2", "agents": ["telemetry"], "forbid": ["customer"]},
+
+    {"q": "tele for M-1", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "cust C-1", "agents": ["customer"], "forbid": ["telemetry"]},
+    {"q": "anomaly M-2", "agents": ["telemetry"], "forbid": ["customer"]},
+    {"q": "overheating M-2", "agents": ["telemetry"], "forbid": ["customer", "machine"]},
+
+    {"q": "show customer C-1 and machine M-1 details", "agents": ["customer", "machine"], "forbid": ["telemetry"]},
+    {"q": "customer C-1 and its telemetry for M-1", "agents": ["customer", "telemetry"]},
+    {"q": "machine M-2 status and anomalies", "agents": ["machine", "telemetry"], "forbid": ["customer"]},
+    {"q": "customer C-1 details plus machine M-1 temperature", "agents": ["customer", "telemetry"]},
+
+    {"q": "Show telemetry readings for all machines of customer named Acme", "agents": ["customer", "machine", "telemetry"], "exact": true},
+    {"q": "anomalies for all machines of customer named Acme", "agents": ["customer", "machine", "telemetry"], "exact": true},
+    {"q": "list machines of customer named Globex", "agents": ["customer", "machine"], "forbid": ["telemetry"]},
+
+    {"q": "what is the weather in Paris", "agents": [], "exact": true},
+    {"q": "tell me a joke", "agents": [], "exact": true},
+    {"q": "hello", "agents": [], "exact": true},
+    {"q": "book a flight to London", "agents": [], "exact": true},
+
+    {"q": "show anomalies for M-2", "roles": ["Machine.Read"], "agents": [], "exact": true},
+    {"q": "customer C-1 details", "roles": ["Machine.Read", "Telemetry.Read"], "agents": [], "forbid": ["customer"]},
+    {"q": "status of machine M-1", "roles": ["Machine.Read"], "agents": ["machine"], "exact": true},
+    {"q": "latest readings for M-1", "roles": ["Telemetry.Read"], "agents": ["telemetry"], "exact": true},
+
+    {"q": "which equipment is vibrating a lot", "agents": ["telemetry"], "tier": "llm"},
+    {"q": "is anything running too hot at Acme", "agents": ["customer", "machine", "telemetry"], "tier": "llm"},
+    {"q": "who owns Press-200", "agents": ["customer", "machine"], "tier": "llm"},
+    {"q": "how are my best customers doing", "agents": ["customer"], "tier": "llm"}
+  ]
+}

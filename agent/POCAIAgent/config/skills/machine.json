@@ -1,0 +1,24 @@
+{
+  "$schema": "../skills.schema.json",
+  "agent": "machine",
+  "skills": [
+    {
+      "id": "machine.get_machine",
+      "name": "Machine details",
+      "tags": ["machine", "status", "asset", "equipment"],
+      "examples": ["status of machine M-1", "show details for machine M-2"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "machine-platform-team"
+    },
+    {
+      "id": "machine.list_machines_by_customer",
+      "name": "Machines owned by a customer",
+      "tags": ["machine", "customer", "fleet", "owned"],
+      "examples": ["list machines for customer C-1", "which machines does C-2 own"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "machine-platform-team"
+    }
+  ]
+}

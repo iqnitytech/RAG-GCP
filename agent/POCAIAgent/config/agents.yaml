@@ -1,0 +1,40 @@
+# Agent / MCP registry. Add a capability = add an entry (+ an Entra app role). No code change.
+# endpoint supports ${ENV_VAR:-default}.
+agents:
+  - name: machine
+    description: Machine information - equipment status, which machines a customer owns
+    transport: ${MCP_TRANSPORT:-inprocess}
+    endpoint: ${MCP_MACHINE_URL:-machine}
+    required_roles: [Machine.Read]
+    keywords: [machine, machines, equipment, device, devices]
+    order: 1
+    consumes: [machine_id, customer_id]
+    produces: [machine_id]
+    version: 1.0.0
+    owner: machine-platform-team
+    tags: [salesforce, assets]
+
+  - name: customer
+    description: Customer information - accounts, tiers, customer search
+    transport: ${MCP_TRANSPORT:-inprocess}
+    endpoint: ${MCP_CUSTOMER_URL:-customer}
+    required_roles: [Customer.Read]
+    keywords: [customer, customers, account, accounts, client, clients]
+    order: 0
+    consumes: [customer_id]
+    produces: [customer_id]
+    version: 1.0.0
+    owner: customer-platform-team
+    tags: [salesforce, crm]
+
+  - name: telemetry
+    description: Telemetry information - temperature, vibration, sensor readings, anomalies
+    transport: ${MCP_TRANSPORT:-inprocess}
+    endpoint: ${MCP_TELEMETRY_URL:-telemetry}
+    required_roles: [Telemetry.Read]
+    keywords: [telemetry, temperature, vibration, sensor, sensors, reading, readings, anomaly, anomalies, alert]
+    order: 2
+    consumes: [machine_id]
+    version: 1.0.0
+    owner: iot-platform-team
+    tags: [salesforce, iot]

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "skill-catalog.schema.json",
+  "title": "Skill catalog for one agent (A2A-style skill metadata)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agent", "skills"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "agent": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$", "description": "<agent>.<mcp tool name>" },
+          "name": { "type": "string", "minLength": 3 },
+          "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "examples": { "type": "array", "items": { "type": "string", "minLength": 3 } },
+          "required_roles": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+          "status": { "enum": ["pending", "approved", "disabled"] },
+          "owner": { "type": "string" }
+        }
+      }
+    }
+  }
+}

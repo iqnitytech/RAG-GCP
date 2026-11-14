@@ -1,0 +1,24 @@
+{
+  "$schema": "../skills.schema.json",
+  "agent": "telemetry",
+  "skills": [
+    {
+      "id": "telemetry.latest_readings",
+      "name": "Latest sensor readings",
+      "tags": ["telemetry", "temperature", "vibration", "sensor", "readings"],
+      "examples": ["latest readings for M-1", "how hot is machine M-3"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "iot-platform-team"
+    },
+    {
+      "id": "telemetry.anomalies",
+      "name": "Machine anomalies",
+      "tags": ["telemetry", "anomaly", "alert", "overheating", "fault"],
+      "examples": ["any anomalies on M-2", "is machine M-2 overheating"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "iot-platform-team"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "../skills.schema.json",
+  "agent": "customer",
+  "skills": [
+    {
+      "id": "customer.get_customer",
+      "name": "Customer details",
+      "tags": ["customer", "account", "tier"],
+      "examples": ["details of customer C-1", "what tier is C-2"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "customer-platform-team"
+    },
+    {
+      "id": "customer.search_customers",
+      "name": "Customer search",
+      "tags": ["customer", "search", "lookup", "name"],
+      "examples": ["find customer named Acme", "search customers matching Globex"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "customer-platform-team"
+    }
+  ]
+}
