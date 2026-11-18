@@ -169,6 +169,35 @@ class StorageService:
         return result
 
 
+    def download_bytes(self, object_name: str) -> bytes:
+        """Download an object's content from the configured bucket.
+
+        Raises:
+            ValueError: If *object_name* is invalid.
+            StorageServiceError: If the object is missing or the download fails.
+        """
+        name = self._normalise_destination_name(object_name)
+        try:
+            return self._bucket.blob(name).download_as_bytes(timeout=UPLOAD_TIMEOUT_SECONDS)
+        except Exception as exc:
+            logger.exception("GCS download failed -- object=%s bucket=%s", name, self._bucket.name)
+            raise StorageServiceError(f"Download of `{name}` failed: {exc}") from exc
+
+    def list_objects(self, prefix: str = "", max_results: int = 500) -> list[str]:
+        """List object keys under ``prefix`` in the configured GCS bucket."""
+        clean_prefix = self._normalise_destination_name(prefix) if prefix.strip() else ""
+        try:
+            blobs = self._client.list_blobs(
+                self._bucket,
+                prefix=clean_prefix,
+                max_results=max_results,
+                timeout=UPLOAD_TIMEOUT_SECONDS,
+            )
+            return [b.name for b in blobs if not b.name.endswith("/")]
+        except Exception as exc:
+            logger.exception("GCS list_objects failed -- prefix=%s bucket=%s", clean_prefix, self._bucket.name)
+            raise StorageServiceError(f"Listing objects under `{clean_prefix}` failed: {exc}") from exc
+
     def ping(self) -> bool:
         """Return True if the configured bucket is reachable (readiness probe)."""
         try:

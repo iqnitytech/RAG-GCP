@@ -24,3 +24,6 @@ google-cloud-secret-manager==2.31.0
 
 # HTTP
 httpx==0.28.1
+
+# Document parsing (PDF text extraction; other formats use the standard library)
+pypdf>=5.0

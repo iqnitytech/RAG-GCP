@@ -132,6 +132,51 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("QDRANT_API_KEY", "qdrant_api_key"),
     )
 
+    # Ingestion / embeddings / vector store
+    embedding_provider: str = Field(
+        default="hash",  # "hash" (local dev/test) or "vertex"
+        validation_alias=AliasChoices("EMBEDDING_PROVIDER", "embedding_provider"),
+    )
+    embedding_model: str = Field(
+        default="text-embedding-005",
+        validation_alias=AliasChoices("EMBEDDING_MODEL", "embedding_model"),
+    )
+    embedding_dimensions: int = Field(
+        default=768,
+        ge=8,
+        validation_alias=AliasChoices("EMBEDDING_DIMENSIONS", "embedding_dimensions"),
+    )
+    vector_store: str = Field(
+        default="memory",  # "memory" or "qdrant"
+        validation_alias=AliasChoices("VECTOR_STORE", "vector_store"),
+    )
+    qdrant_collection: str = Field(
+        default="rag_chunks",
+        validation_alias=AliasChoices("QDRANT_COLLECTION", "qdrant_collection"),
+    )
+    ocr_provider: str = Field(
+        default="none",  # "none" or "vertex" (Gemini multimodal for images and scanned PDFs)
+        validation_alias=AliasChoices("OCR_PROVIDER", "ocr_provider"),
+    )
+    ocr_model: str = Field(
+        default="gemini-2.0-flash",
+        validation_alias=AliasChoices("OCR_MODEL", "ocr_model"),
+    )
+    chunk_size: int = Field(
+        default=1000,
+        ge=100,
+        validation_alias=AliasChoices("CHUNK_SIZE", "chunk_size"),
+    )
+    chunk_overlap: int = Field(
+        default=200,
+        ge=0,
+        validation_alias=AliasChoices("CHUNK_OVERLAP", "chunk_overlap"),
+    )
+    shared_folders_root: str = Field(
+        default="./.shared_folders",
+        validation_alias=AliasChoices("SHARED_FOLDERS_ROOT", "shared_folders_root"),
+    )
+
     # Secret: shared API key for the X-API-Key header. Mandatory in production.
     api_key: SecretStr = Field(
         default=SecretStr(""),
@@ -164,6 +209,10 @@ class Settings(BaseSettings):
     sf_access_token: SecretStr = Field(
         default=SecretStr(""),
         validation_alias=AliasChoices("SF_ACCESS_TOKEN", "sf_access_token"),
+    )
+    sf_shared_paths: str = Field(
+        default="",
+        validation_alias=AliasChoices("SF_SHARED_PATHS", "sf_shared_paths"),
     )
 
     # Databricks EDH Connector (optional; secrets injected via Secret Manager in production)

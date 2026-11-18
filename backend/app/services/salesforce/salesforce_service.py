@@ -8,8 +8,11 @@ from typing import Any, Sequence
 
 from sdk.connectors.edh import (
     AsyncEdhConnector,
+    DataZone,
     EdhConfigError,
     EdhConnector,
+    EdhObjectMetadata,
+    EdhObjectRef,
     SalesforceErrorConstants,
     log_and_build_edh_error,
 )
@@ -103,6 +106,61 @@ class SalesforceService:
                 record_id,
             )
             return record
+
+    async def query(
+        self,
+        sobject_name: str,
+        *,
+        fields: Sequence[str] | None = None,
+        where: dict[str, Any] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a SOQL query for ``sobject_name`` using the async SDK connector."""
+        async_connector = self._resolve_async_connector()
+        async with async_connector as sf:
+            return await sf.query(sobject_name, fields=fields, where=where, limit=limit)
+
+    async def list_shared_files(
+        self,
+        path_prefix: str = "",
+        *,
+        zone: DataZone = DataZone.RAW,
+        max_files: int = 500,
+    ) -> list[EdhObjectMetadata]:
+        """List files under a shared Salesforce path prefix (ContentVersion objects)."""
+        async_connector = self._resolve_async_connector()
+        items: list[EdhObjectMetadata] = []
+        token: str | None = None
+        async with async_connector as sf:
+            while len(items) < max_files:
+                page_size = min(100, max_files - len(items))
+                page = await sf.list_objects(
+                    zone=zone,
+                    prefix=path_prefix,
+                    page_size=page_size,
+                    page_token=token,
+                )
+                items.extend(page.items)
+                if not page.next_page_token:
+                    break
+                token = page.next_page_token
+        return items
+
+    async def download_shared_file(
+        self,
+        key: str,
+        *,
+        zone: DataZone = DataZone.RAW,
+    ) -> bytes:
+        """Download binary file content for a shared Salesforce file key."""
+        async_connector = self._resolve_async_connector()
+        async with async_connector as sf:
+            ref = EdhObjectRef(
+                namespace=sf.config.namespace,
+                key=key,
+                zone=zone,
+            )
+            return await sf.get_bytes(ref)
 
     # CamelCase alias matching SDK naming
     getRecordById = get_record_by_id
