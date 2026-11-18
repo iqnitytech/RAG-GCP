@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise Multi-MCP Test & Diagnostic Console</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div class="logo-group">
+      <div class="logo-badge">MCP CLIENT</div>
+      <div>
+        <div class="app-title">Enterprise MCP Diagnostic Console</div>
+        <div class="app-subtitle">Fortune 10 Architecture &bull; Customer &bull; Machine &bull; Telemetry</div>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="mode-pill">
+        <button id="btn-mode-mock" class="mode-btn active">MOCK MODE</button>
+        <button id="btn-mode-sdk" class="mode-btn">SDK MODE</button>
+      </div>
+      <button class="btn-secondary" onclick="showScenarios()">
+        <span>🎯</span> Predefined Scenarios
+      </button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Left Sidebar: Servers and Tools -->
+    <div class="sidebar">
+      <div class="section-header">Registered MCP Servers</div>
+      <div id="server-list-container" class="server-list">
+        <!-- Rendered by app.js -->
+      </div>
+    </div>
+
+    <!-- Center: Form and Parameters -->
+    <div class="center-panel">
+      <!-- Tool View -->
+      <div id="tool-view" class="card">
+        <div class="tool-headline">
+          <div id="tool-title" class="tool-title">select_a_tool</div>
+          <div id="server-tag" class="server-tag">SERVER</div>
+        </div>
+
+        <div id="tool-desc" class="tool-desc">
+          Select a tool on the left panel to inspect parameters and test live invocation.
+        </div>
+
+        <div class="section-header" style="padding-left:0; padding-right:0;">Input Parameters</div>
+
+        <div id="params-form" class="params-form">
+          <!-- Dynamically generated inputs -->
+        </div>
+
+        <div class="btn-group">
+          <button id="btn-run-tool" class="btn-primary" onclick="invokeCurrentTool()">
+            <span>▶</span> Run Tool
+          </button>
+          <button class="btn-secondary" onclick="resetFormToPreset()">
+            <span>↺</span> Reset to Defaults
+          </button>
+        </div>
+      </div>
+
+      <!-- Scenarios View -->
+      <div id="scenarios-view" class="card" style="display: none;">
+        <div class="tool-headline">
+          <div class="tool-title">End-to-End Scenarios</div>
+          <div class="server-tag">PIPELINE TESTING</div>
+        </div>
+        <div class="tool-desc">
+          Execute multi-step cross-MCP integration pipelines across Customer, Machine, and Telemetry servers with a single click.
+        </div>
+        <div id="scenarios-list" class="scenarios-container">
+          <!-- Rendered by app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Response & Telemetry Output -->
+    <div class="right-panel">
+      <div class="panel-header">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Response Payload</span>
+          <div id="status-badge" class="status-badge idle">READY</div>
+        </div>
+
+        <div class="meta-info">
+          <div>Latency: <span id="meta-duration">0 ms</span></div>
+          <div>Time: <span id="meta-timestamp">--:--:--</span></div>
+          <button id="btn-copy-response" class="btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="copyResponse()">
+            Copy JSON
+          </button>
+        </div>
+      </div>
+
+      <div id="response-body" class="response-body">
+// Click "Run Tool" or "Run Full Scenario" to execute the call.
+// The real-time JSON response and metadata will appear here.
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

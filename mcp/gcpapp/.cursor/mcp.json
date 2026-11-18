@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "customer-mcp": {
+      "command": "C:\\stash\\gcpapp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp.customer_mcp.server"],
+      "cwd": "C:\\stash\\gcpapp",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK"
+      }
+    },
+    "machine-mcp": {
+      "command": "C:\\stash\\gcpapp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp.machine_mcp.server"],
+      "cwd": "C:\\stash\\gcpapp",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK"
+      }
+    },
+    "telemetry-mcp": {
+      "command": "C:\\stash\\gcpapp\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp.telemetry_mcp.server"],
+      "cwd": "C:\\stash\\gcpapp",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK"
+      }
+    }
+  }
+}
