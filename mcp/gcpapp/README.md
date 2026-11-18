@@ -145,7 +145,7 @@ gcpapp/
 
 ### 2. Virtual Environment Setup
 ```powershell
-cd C:\stash\gcpapp
+cd mcp\gcpapp
 
 # Create virtual environment
 python -m venv .venv
@@ -156,8 +156,8 @@ python -m venv .venv
 # Install the internal SDK wheel
 pip install C:\stash\SDK\rag-platform-sdk\dist\rag_platform_sdk-0.2.0-py3-none-any.whl
 
-# Install dependencies
-pip install mcp pydantic pydantic-settings structlog tenacity python-dotenv pytest pytest-asyncio pytest-cov
+# Install dependencies from requirements.txt
+pip install -r requirements.txt
 ```
 
 ---
