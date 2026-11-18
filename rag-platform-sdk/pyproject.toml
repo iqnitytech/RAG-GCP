@@ -7,7 +7,7 @@ name = "rag-platform-sdk"
 dynamic = ["version"]
 description = "Shared FastAPI/GCP building blocks: auth, schemas, logging, middleware, errors, probes."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
     "starlette>=0.37",

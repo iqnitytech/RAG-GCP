@@ -12,11 +12,14 @@ ENV/
 .env
 .env.*
 !.env.example
+!.env.*.example
 backend/secrets/
 
 # Local virtual environments
 virtual/
 .environment/
+environment/
+-/
 
 # Terraform
 **/.terraform/
@@ -35,6 +38,3 @@ dist/
 .idea/
 /infra/terraform/.terraform.lock.hcl
 
--/Lib/
--/Scripts/
-environment/

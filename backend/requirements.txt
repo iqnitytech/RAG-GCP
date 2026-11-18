@@ -1,8 +1,9 @@
 # Pinned for reproducible production builds.
 
 # Shared platform SDK: built in the rag-platform-sdk repo and delivered as a wheel
-# in ./vendor (see rag-platform-sdk/scripts/release.ps1).
+# in ./vendor (works whether pip is invoked from backend/ or the repository root).
 --find-links ./vendor
+--find-links ./backend/vendor
 rag-platform-sdk>=0.2,<0.3
 
 # FastAPI

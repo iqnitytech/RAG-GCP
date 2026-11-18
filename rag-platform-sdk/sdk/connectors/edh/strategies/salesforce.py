@@ -312,7 +312,9 @@ class SalesforceEdhStrategy:
             detail=detail,
         )
 
-        if code in (401, 403) or sf_code in SalesforceErrorConstants.AUTH_ERROR_CODES:
+        # Salesforce returns REQUEST_LIMIT_EXCEEDED with HTTP 403; classify it as rate-limit, not auth.
+        is_rate_limit_code = sf_code in SalesforceErrorConstants.RATE_LIMIT_ERROR_CODES
+        if (code in (401, 403) or sf_code in SalesforceErrorConstants.AUTH_ERROR_CODES) and not is_rate_limit_code:
             err_code = (
                 SalesforceErrorConstants.ERR_INSUFFICIENT_ACCESS
                 if code == 403 or "INSUFFICIENT_ACCESS" in sf_code

@@ -863,28 +863,28 @@ def test_salesforce_error_constants_and_structured_logging(caplog: pytest.LogCap
     )
     strategy = SalesforceEdhStrategy(cfg, transport=error_transport)
 
-    # 1. Validation error (empty fields on createRecord) -> SF_VALIDATION_EMPTY_RECORD_FIELDS
+    # 1. Validation error (unsafe SObject identifier) -> SF_CONFIG_UNSAFE_SOQL_IDENTIFIER
     with pytest.raises(EdhConfigError) as exc_empty:
-        strategy.createRecord("Account", {})
-    assert exc_empty.value.error_code == SalesforceErrorConstants.ERR_EMPTY_RECORD_FIELDS
-    assert exc_empty.value.public_message == SalesforceErrorConstants.PUBLIC_VALIDATION_ERROR
+        strategy.createRecord("Account; DROP", {"Name": "x"})
+    assert exc_empty.value.error_code == SalesforceErrorConstants.ERR_UNSAFE_IDENTIFIER
 
-    # 2. Validation error (empty record_id on deleteRecord) -> SF_VALIDATION_INVALID_RECORD_ID
+    # 2. Validation error (empty record_id on deleteRecord) -> SF_CONFIG_EMPTY_RECORD_ID
     with pytest.raises(EdhConfigError) as exc_id:
         strategy.deleteRecord("Account", "   ")
-    assert exc_id.value.error_code == SalesforceErrorConstants.ERR_INVALID_RECORD_ID
+    assert exc_id.value.error_code == SalesforceErrorConstants.ERR_EMPTY_RECORD_ID
+    assert exc_id.value.public_message == SalesforceErrorConstants.PUBLIC_CONFIG_ERROR
 
-    # 3. Salesforce 400 MALFORMED_QUERY -> EdhConfigError with SF_SOQL_MALFORMED_QUERY
+    # 3. Salesforce 400 MALFORMED_QUERY -> EdhConfigError with SF_BAD_REQUEST
     with pytest.raises(EdhConfigError) as exc_soql:
         strategy.query("Account", where={"Name": "MALFORMED"})
-    assert exc_soql.value.error_code == SalesforceErrorConstants.ERR_MALFORMED_QUERY
+    assert exc_soql.value.error_code == SalesforceErrorConstants.ERR_MALFORMED_REQUEST
     assert exc_soql.value.upstream_status == 400
     assert "unexpected token: FROM" in str(exc_soql.value)
 
     # 4. Salesforce 400 DUPLICATE_VALUE -> EdhConflictError with SF_CONFLICT_DUPLICATE_VALUE
     with pytest.raises(EdhConflictError) as exc_dup:
         strategy.getRecordById("Account", "DUPLICATE")
-    assert exc_dup.value.error_code == SalesforceErrorConstants.ERR_DUPLICATE_VALUE
+    assert exc_dup.value.error_code == SalesforceErrorConstants.ERR_DUPLICATE_RECORD
     assert exc_dup.value.public_message == SalesforceErrorConstants.PUBLIC_CONFLICT
 
     # 5. Salesforce 403 REQUEST_LIMIT_EXCEEDED -> EdhRateLimitError with SF_RATE_LIMIT_EXCEEDED
@@ -893,10 +893,10 @@ def test_salesforce_error_constants_and_structured_logging(caplog: pytest.LogCap
     assert exc_rate.value.error_code == SalesforceErrorConstants.ERR_RATE_LIMIT_EXCEEDED
     assert exc_rate.value.public_message == SalesforceErrorConstants.PUBLIC_RATE_LIMIT
 
-    # 6. Salesforce 500 UNABLE_TO_LOCK_ROW -> EdhTransientError with SF_TRANSIENT_ROW_LOCK
+    # 6. Salesforce 500 UNABLE_TO_LOCK_ROW -> EdhTransientError with SF_TRANSIENT_UPSTREAM_ERROR
     with pytest.raises(EdhTransientError) as exc_lock:
         strategy.getRecordById("Account", "LOCK_ROW")
-    assert exc_lock.value.error_code == SalesforceErrorConstants.ERR_UNABLE_TO_LOCK_ROW
+    assert exc_lock.value.error_code == SalesforceErrorConstants.ERR_TRANSIENT_UPSTREAM
 
     # 7. Salesforce 404 NOT_FOUND -> EdhNotFoundError with SF_NOT_FOUND_RECORD
     with pytest.raises(EdhNotFoundError) as exc_nf:
@@ -905,11 +905,12 @@ def test_salesforce_error_constants_and_structured_logging(caplog: pytest.LogCap
 
     # Verify structured log messages were emitted with error codes
     logged_text = "\n".join(r.getMessage() for r in caplog.records)
-    assert SalesforceErrorConstants.ERR_EMPTY_RECORD_FIELDS in logged_text
-    assert SalesforceErrorConstants.ERR_MALFORMED_QUERY in logged_text
-    assert SalesforceErrorConstants.ERR_DUPLICATE_VALUE in logged_text
+    assert SalesforceErrorConstants.ERR_UNSAFE_IDENTIFIER in logged_text
+    assert SalesforceErrorConstants.ERR_EMPTY_RECORD_ID in logged_text
+    assert SalesforceErrorConstants.ERR_MALFORMED_REQUEST in logged_text
+    assert SalesforceErrorConstants.ERR_DUPLICATE_RECORD in logged_text
     assert SalesforceErrorConstants.ERR_RATE_LIMIT_EXCEEDED in logged_text
-    assert SalesforceErrorConstants.ERR_UNABLE_TO_LOCK_ROW in logged_text
+    assert SalesforceErrorConstants.ERR_TRANSIENT_UPSTREAM in logged_text
     assert SalesforceErrorConstants.ERR_RECORD_NOT_FOUND in logged_text
 
 
