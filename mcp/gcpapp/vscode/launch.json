@@ -2,6 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Chat: Intelligent Agent UI (http://localhost:8050)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "chat_app.main",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Client: Web Dashboard (http://localhost:8000)",
       "type": "debugpy",
       "request": "launch",
