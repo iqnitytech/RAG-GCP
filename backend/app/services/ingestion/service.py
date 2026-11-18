@@ -61,9 +61,10 @@ class IngestionJob:
 
 
 class JobStore:
-    def __init__(self) -> None:
+    def __init__(self, state_store: Any | None = None) -> None:
         self._lock = Lock()
         self._jobs: dict[str, IngestionJob] = {}
+        self._state_store = state_store
 
     def create(self, source_type: str, application_id: str = DEFAULT_APPLICATION_ID) -> IngestionJob:
         clean_app = validate_application_id(application_id)
@@ -74,13 +75,32 @@ class JobStore:
         )
         with self._lock:
             self._jobs[job.job_id] = job
+        if self._state_store is not None:
+            self._state_store.save_job(job)
         return job
+
+    def save(self, job: IngestionJob) -> None:
+        with self._lock:
+            self._jobs[job.job_id] = job
+        if self._state_store is not None:
+            self._state_store.save_job(job)
 
     def get(self, job_id: str) -> IngestionJob | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            cached = self._jobs.get(job_id)
+        if cached is not None:
+            return cached
+        if self._state_store is not None:
+            loaded = self._state_store.load_job(job_id)
+            if loaded is not None:
+                with self._lock:
+                    self._jobs[job_id] = loaded
+                return loaded
+        return None
 
     def list_jobs(self, application_id: str | None = None) -> list[IngestionJob]:
+        if self._state_store is not None:
+            return self._state_store.load_jobs(application_id=application_id)
         clean_app = validate_application_id(application_id) if application_id else None
         with self._lock:
             jobs = [
@@ -123,18 +143,31 @@ class IngestionService:
         ocr: OcrProvider | None = None,
         registry: DocumentRegistry | None = None,
         pubsub: PubSubBroker | None = None,
+        state_store: Any | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = vector_store
         self._ocr = ocr
-        self.registry: DocumentRegistry = registry or InMemoryDocumentRegistry()
+        self._state_store = state_store
+        self.registry: DocumentRegistry = registry or state_store or InMemoryDocumentRegistry()
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
-        self.jobs = JobStore()
+        self.jobs = JobStore(state_store=state_store)
         self.event_listener = IngestionEventListener()
         self.pubsub: PubSubBroker = pubsub or InMemoryPubSubBroker()
         self._indexed_docs: set[str] = set()
         self._lock = Lock()
+
+    def _is_version_indexed(self, doc_id: str) -> bool:
+        with self._lock:
+            if doc_id in self._indexed_docs:
+                return True
+        if self._state_store is not None and hasattr(self._state_store, "has_indexed_version"):
+            if self._state_store.has_indexed_version(doc_id):
+                with self._lock:
+                    self._indexed_docs.add(doc_id)
+                return True
+        return False
 
     def ingest_text(
         self,
@@ -150,11 +183,10 @@ class IngestionService:
         clean = normalise_whitespace(text)
         doc_id = content_doc_id(source, clean, clean_app)
         document_id = document_id_for(source, clean_app)
-        with self._lock:
-            if doc_id in self._indexed_docs:
-                return DocumentResult(
-                    doc_id, 0, skipped=True, document_id=document_id, application_id=clean_app
-                )
+        if self._is_version_indexed(doc_id):
+            return DocumentResult(
+                doc_id, 0, skipped=True, document_id=document_id, application_id=clean_app
+            )
         chunks = chunk_text(clean, chunk_size=self._chunk_size, overlap=self._chunk_overlap)
         if not chunks:
             return DocumentResult(
@@ -270,12 +302,14 @@ class IngestionService:
         else:
             job.documents_indexed += 1
             job.chunks_indexed += result.chunks
+        self.jobs.save(job)
 
     def record_error(self, job: IngestionJob, source: str, exc: Exception) -> None:
         job.documents_total += 1
         job.files_processed += 1
         job.files_failed += 1
         job.errors.append(f"{source}: {type(exc).__name__}")
+        self.jobs.save(job)
         logger.error("Ingestion failed for %s: %s", source, exc)
 
     def finish(self, job: IngestionJob) -> None:
@@ -285,6 +319,9 @@ class IngestionService:
             else JobStatus.COMPLETED
         )
         job.finished_at = datetime.now(timezone.utc).isoformat()
+        self.jobs.save(job)
 
     def close(self) -> None:
         self._store.close()
+        if self._state_store is not None and hasattr(self._state_store, "close"):
+            self._state_store.close()

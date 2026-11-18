@@ -645,6 +645,76 @@ def test_google_cloud_pubsub_publish_pull_push_and_gcs_object_finalize(api):
     assert any(p.endswith(":acknowledge") for _, p in calls)
 
 
+def test_sqlite_persistent_state_store_survives_restart(tmp_path):
+    from app.services.ingestion.state_store import SqliteIngestionStateStore
+
+    db_file = tmp_path / "state.sqlite3"
+
+    # Instance 1: ingest two documents under CPQ, create a job, and link them
+    state1 = SqliteIngestionStateStore(db_file)
+    store1 = InMemoryVectorStore()
+    svc1 = IngestionService(
+        embedder=HashEmbedder(32),
+        vector_store=store1,
+        chunk_size=200,
+        chunk_overlap=40,
+        state_store=state1,
+    )
+    job = svc1.jobs.create("shared_path", application_id="CPQ")
+    r1 = svc1.ingest_text(
+        "CPQ Enterprise pricing matrix and discounting rules. " * 10,
+        source="gcs://cpq/matrix.txt",
+        filename="matrix.txt",
+        application_id="CPQ",
+    )
+    r2 = svc1.ingest_text(
+        "CPQ Master contract amendment terms. " * 10,
+        source="gcs://cpq/amendment.txt",
+        filename="amendment.txt",
+        application_id="CPQ",
+    )
+    svc1.record_result(job, r1, file_path="cpq/matrix.txt")
+    svc1.record_result(job, r2, file_path="cpq/amendment.txt")
+    svc1.finish(job)
+    link = svc1.link_documents(r1.document_id, r2.document_id, "depends_on", "admin@portal")
+    svc1.close()
+
+    # Instance 2 (simulating a server restart reading from the same SQLite WAL db)
+    state2 = SqliteIngestionStateStore(db_file)
+    store2 = InMemoryVectorStore()
+    svc2 = IngestionService(
+        embedder=HashEmbedder(32),
+        vector_store=store2,
+        chunk_size=200,
+        chunk_overlap=40,
+        state_store=state2,
+    )
+
+    # 1. Job status and file counts persisted across restart
+    loaded_job = svc2.jobs.get(job.job_id)
+    assert loaded_job is not None
+    assert loaded_job.status.value == "completed"
+    assert loaded_job.files_processed == 2
+    assert loaded_job.processed_files == ["cpq/matrix.txt", "cpq/amendment.txt"]
+
+    # 2. Documents and Admin Portal links persisted across restart
+    docs = svc2.registry.list_documents(application_id="CPQ")
+    assert len(docs) == 2
+    assert svc2.registry.linked_ids(r1.document_id) == [r2.document_id]
+    outgoing, _ = svc2.registry.links_for(r1.document_id)
+    assert len(outgoing) == 1 and outgoing[0].link_id == link.link_id
+
+    # 3. Content deduplication persisted across restart (re-ingesting unchanged text is skipped)
+    r1_again = svc2.ingest_text(
+        "CPQ Enterprise pricing matrix and discounting rules. " * 10,
+        source="gcs://cpq/matrix.txt",
+        filename="matrix.txt",
+        application_id="CPQ",
+    )
+    assert r1_again.skipped is True
+    svc2.close()
+
+
 def test_admin_portal_document_linking_and_vector_payload_sync(api):
     client, store = api
 

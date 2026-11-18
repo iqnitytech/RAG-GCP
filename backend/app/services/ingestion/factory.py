@@ -14,6 +14,7 @@ from app.services.ingestion.pubsub import (
     PubSubBroker,
 )
 from app.services.ingestion.service import IngestionService
+from app.services.ingestion.state_store import SqliteIngestionStateStore
 from app.services.ingestion.vector_store import (
     InMemoryVectorStore,
     QdrantVectorStore,
@@ -70,6 +71,11 @@ def build_pubsub(settings: Settings) -> PubSubBroker:
 
 def create_ingestion_service(settings: Settings | None = None) -> IngestionService:
     resolved = settings or get_settings()
+    state_store = (
+        SqliteIngestionStateStore(resolved.ingestion_state_db_path)
+        if resolved.ingestion_state_db_path.strip()
+        else None
+    )
     return IngestionService(
         embedder=build_embedder(resolved),
         vector_store=build_vector_store(resolved),
@@ -77,6 +83,7 @@ def create_ingestion_service(settings: Settings | None = None) -> IngestionServi
         chunk_overlap=resolved.chunk_overlap,
         ocr=build_ocr(resolved),
         pubsub=build_pubsub(resolved),
+        state_store=state_store,
     )
 
 

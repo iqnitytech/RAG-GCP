@@ -190,6 +190,10 @@ class Settings(BaseSettings):
             "PUBSUB_INGESTION_SUBSCRIPTION", "pubsub_ingestion_subscription"
         ),
     )
+    ingestion_state_db_path: str = Field(
+        default="./.data_lake/ingestion_state.sqlite3",
+        validation_alias=AliasChoices("INGESTION_STATE_DB_PATH", "ingestion_state_db_path"),
+    )
 
     # Secret: shared API key for the X-API-Key header. Mandatory in production.
     api_key: SecretStr = Field(
