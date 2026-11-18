@@ -1,0 +1,153 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Chat: Intelligent Agent UI (http://localhost:8050)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "chat_app.main",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Client: Web Dashboard (http://localhost:8000)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "client_app.main",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Client: Interactive Terminal Menu",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "client_app.cli_main",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "MCP: Customer Server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "mcp.customer_mcp.server",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "LOG_LEVEL": "DEBUG",
+        "LOG_FORMAT": "TEXT",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "MCP: Machine Server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "mcp.machine_mcp.server",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "LOG_LEVEL": "DEBUG",
+        "LOG_FORMAT": "TEXT",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "MCP: Telemetry Server",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "mcp.telemetry_mcp.server",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "LOG_LEVEL": "DEBUG",
+        "LOG_FORMAT": "TEXT",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Script: Run Tool with Custom Args",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/test_tool.py",
+      "args": ["customer_get_profile", "--args", "{\"customer_id\": \"CUST-001001\"}", "--mode", "MOCK"],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Script: Verify All MCPs (Smoke Test)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/verify_mcps.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Test: Pytest Test Suite",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "env": {
+        "DATA_PROVIDER_MODE": "MOCK",
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
