@@ -8,6 +8,11 @@ from app.auth.gcp import get_gcp_credentials
 from app.core.config import Settings, get_settings
 from app.services.ingestion.embedder import Embedder, HashEmbedder, VertexEmbedder
 from app.services.ingestion.ocr import OcrProvider, VertexGeminiOcr
+from app.services.ingestion.pubsub import (
+    GcpPubSubBroker,
+    InMemoryPubSubBroker,
+    PubSubBroker,
+)
 from app.services.ingestion.service import IngestionService
 from app.services.ingestion.vector_store import (
     InMemoryVectorStore,
@@ -49,6 +54,20 @@ def build_ocr(settings: Settings) -> OcrProvider | None:
     return None
 
 
+def build_pubsub(settings: Settings) -> PubSubBroker:
+    if settings.pubsub_provider.strip().lower() == "gcp":
+        return GcpPubSubBroker(
+            project_id=settings.gcp_project_id,
+            topic=settings.pubsub_ingestion_topic,
+            subscription=settings.pubsub_ingestion_subscription,
+            credentials_getter=get_gcp_credentials,
+        )
+    return InMemoryPubSubBroker(
+        topic=settings.pubsub_ingestion_topic,
+        subscription=settings.pubsub_ingestion_subscription,
+    )
+
+
 def create_ingestion_service(settings: Settings | None = None) -> IngestionService:
     resolved = settings or get_settings()
     return IngestionService(
@@ -57,6 +76,7 @@ def create_ingestion_service(settings: Settings | None = None) -> IngestionServi
         chunk_size=resolved.chunk_size,
         chunk_overlap=resolved.chunk_overlap,
         ocr=build_ocr(resolved),
+        pubsub=build_pubsub(resolved),
     )
 
 

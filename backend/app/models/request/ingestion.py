@@ -199,3 +199,92 @@ class IndexedDocumentResponse(BaseModel):
     chunk_count: int
     indexed_at: str
     linked_document_ids: list[str]
+
+
+class IngestionWebhookEventRequest(BaseModel):
+    """Push event payload received by ``POST /ingestion/events/webhook``."""
+
+    event_type: Literal["file.created", "file.updated", "record.updated", "folder.detected"] = Field(
+        default="file.created",
+        description="Type of event triggering background ingestion",
+    )
+    application_id: str = Field(
+        default=DEFAULT_APPLICATION_ID,
+        description="Application ID (e.g. CPQ, CustomerExperience)",
+    )
+    provider: SharedFolderProvider = Field(
+        default="filesystem",
+        description="Source provider where the file/folder event occurred",
+    )
+    paths: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="File or folder paths affected by the event",
+    )
+    zone: Literal["landing", "quarantine", "raw", "curated", "gold"] = Field(default="raw")
+
+    @model_validator(mode="after")
+    def _validate_app(self) -> "IngestionWebhookEventRequest":
+        self.application_id = validate_application_id(self.application_id)
+        return self
+
+
+class FolderWatchSubscriptionRequest(BaseModel):
+    """Register a shared folder to be watched by the Event Listener."""
+
+    application_id: str = Field(
+        default=DEFAULT_APPLICATION_ID,
+        description="Application ID (e.g. CPQ, CustomerExperience)",
+    )
+    provider: SharedFolderProvider = Field(default="filesystem")
+    shared_path: str = Field(..., min_length=1, description="Folder path or prefix to watch")
+    zone: Literal["landing", "quarantine", "raw", "curated", "gold"] = Field(default="raw")
+
+    @model_validator(mode="after")
+    def _validate_app(self) -> "FolderWatchSubscriptionRequest":
+        self.application_id = validate_application_id(self.application_id)
+        return self
+
+
+class FolderWatchSubscriptionResponse(BaseModel):
+    subscription_id: str
+    application_id: str
+    provider: str
+    shared_path: str
+    zone: str
+    enabled: bool
+    events_triggered: int
+    files_detected_total: int
+    last_polled_at: str | None = None
+    last_job_id: str | None = None
+    created_at: str
+
+
+class IngestionEventResponse(BaseModel):
+    event_id: str
+    event_type: str
+    application_id: str
+    provider: str
+    paths: list[str]
+    zone: str
+    received_at: str
+    job_id: str
+    pubsub_message_id: str | None = None
+
+
+class PubSubPushEnvelopeRequest(BaseModel):
+    """Standard Google Cloud Pub/Sub Push Subscription request envelope."""
+
+    message: dict = Field(..., description="Pub/Sub message object with base64 'data' and 'attributes'")
+    subscription: str = Field(default="", description="Full Pub/Sub subscription resource name")
+
+
+class PubSubPublishResponse(BaseModel):
+    message_id: str
+    event_id: str
+    application_id: str
+    provider: str
+    paths: list[str]
+
+

@@ -1,6 +1,6 @@
 # Phase 1: Ingestion Pipeline
 
-**Status:** Implemented and unit-tested (backend: 43 passed, 8 skipped live-credential integration tests).
+**Status:** Implemented and unit-tested (backend: 45 passed, 8 skipped live-credential integration tests).
 **Not yet verified:** real Qdrant, Vertex AI embeddings and Gemini OCR (adapters are tested against mocked HTTP only).
 
 ## Goal
@@ -20,6 +20,8 @@ source (GCS / Salesforce) -> parse -> chunk -> embed -> index (Qdrant)
 | `embedder.py` | `HashEmbedder` (dev/test) and `VertexEmbedder` (Vertex AI REST) |
 | `vector_store.py` | `InMemoryVectorStore` and `QdrantVectorStore` (REST, with payload link sync) |
 | `folder_scanner.py` | Generic `FolderScanner` across `filesystem`, `gcs`, `salesforce`, `databricks`, `data_lake`, `object_storage_hub`, and `api_hub` |
+| `event_listener.py` | `IngestionEventListener` (webhook push event handler + shared-folder watcher subscriptions with delta file-fingerprint detection) |
+| `pubsub.py` | `GcpPubSubBroker` & `InMemoryPubSubBroker` (Google Cloud Pub/Sub Publisher, Push Subscription receiver with native GCS `OBJECT_FINALIZE` decoding, and Pull/Ack Subscriber) |
 | `registry.py` | `DocumentRegistry` & `InMemoryDocumentRegistry` for Admin Portal document dependency/linking |
 | `service.py` | `IngestionService` orchestration, idempotency, `JobStore`, and `link_documents` / `unlink_documents` |
 | `factory.py` | Builds the service from settings |
@@ -109,7 +111,25 @@ When users upload documents and an admin links them in the Admin Portal:
 3. **`GET /ingestion/documents/{document_id}/links`** — Inspect `outgoing` links, `incoming` links, and `linked_document_ids` for a document.
 4. **`DELETE /ingestion/documents/{document_id}/links/{link_id}`** — Remove a link and sync the vector store payloads.
 
-Both job and document-linking endpoints require the `X-API-Key` header (when configured) and are rate limited.
+### Event Listener & Shared-Folder Watcher Endpoints
+1. **`POST /ingestion/events/webhook` (202)** — Push event listener for real-time file/folder arrival notifications (e.g. from `/documents/upload`, GCS Eventarc/PubSub, Salesforce Platform Events, or S3 webhooks):
+   ```json
+   {
+     "event_type": "file.created",
+     "application_id": "CPQ",
+     "provider": "gcs",
+     "paths": ["cpq/pricing-2026.pdf"]
+   }
+   ```
+2. **`POST /ingestion/events/subscriptions` (201)**, **`GET /ingestion/events/subscriptions`**, **`DELETE /ingestion/events/subscriptions/{subscription_id}`** — Subscribe any shared folder (`application_id`, `provider`, `shared_path`, `zone`) to the folder watcher.
+3. **`POST /ingestion/events/poll`** — Scans watched folders, computes content fingerprints, detects **only newly added or modified files** since the last scan, emits `folder.detected` events, and queues background ingestion jobs.
+4. **`GET /ingestion/events`** — Audit log of recent events and the `job_id` each event triggered.
+5. **Google Cloud Pub/Sub Endpoints (`pubsub.py`):**
+   - **`POST /ingestion/events/pubsub/publish` (202)** — Publishes an `IngestionEvent` to the configured Cloud Pub/Sub topic (`PUBSUB_INGESTION_TOPIC`).
+   - **`POST /ingestion/events/pubsub/push` (202)** — Receives standard **Google Cloud Pub/Sub Push Subscription** envelopes (`{"message": {"data": "<base64>", "messageId": "...", "attributes": {...}}, "subscription": "..."}`), automatically decoding both custom RAG ingestion events and **native GCS Bucket Notification (`OBJECT_FINALIZE`)** messages and queuing background ingestion.
+   - **`POST /ingestion/events/pubsub/pull`** — Pulls pending messages from `PUBSUB_INGESTION_SUBSCRIPTION`, queues background ingestion jobs, and acknowledges (`ack`) the processed `ackId`s.
+
+Both job, event-listener, and document-linking endpoints require the `X-API-Key` header (when configured) and are rate limited.
 
 ## Behaviour
 - **Idempotent:** the document id is a hash of source and content. Chunk ids are deterministic UUIDs, so re-ingesting overwrites instead of duplicating.
@@ -131,6 +151,9 @@ Both job and document-linking endpoints require the `X-API-Key` header (when con
 | `OCR_MODEL` | `gemini-2.0-flash` | OCR model |
 | `SHARED_FOLDERS_ROOT` | `./.shared_folders` | Base root directory for `provider="filesystem"` shared folder scans |
 | `SF_SHARED_PATHS` | `shared/documents` | Optional default shared Salesforce folder path prefix |
+| `PUBSUB_PROVIDER` | `memory` | `memory` (local dev/tests) or `gcp` (Google Cloud Pub/Sub REST v1) |
+| `PUBSUB_INGESTION_TOPIC` | `rag-ingestion-events` | Cloud Pub/Sub topic for ingestion events |
+| `PUBSUB_INGESTION_SUBSCRIPTION` | `rag-ingestion-sub` | Cloud Pub/Sub subscription for pull workers |
 
 For real use: `EMBEDDING_PROVIDER=vertex`, `VECTOR_STORE=qdrant`, `QDRANT_URL=...`, and `OCR_PROVIDER=vertex` for images.
 

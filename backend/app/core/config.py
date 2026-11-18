@@ -176,6 +176,20 @@ class Settings(BaseSettings):
         default="./.shared_folders",
         validation_alias=AliasChoices("SHARED_FOLDERS_ROOT", "shared_folders_root"),
     )
+    pubsub_provider: str = Field(
+        default="memory",  # "memory" (local dev/tests) or "gcp" (Google Cloud Pub/Sub)
+        validation_alias=AliasChoices("PUBSUB_PROVIDER", "pubsub_provider"),
+    )
+    pubsub_ingestion_topic: str = Field(
+        default="rag-ingestion-events",
+        validation_alias=AliasChoices("PUBSUB_INGESTION_TOPIC", "pubsub_ingestion_topic"),
+    )
+    pubsub_ingestion_subscription: str = Field(
+        default="rag-ingestion-sub",
+        validation_alias=AliasChoices(
+            "PUBSUB_INGESTION_SUBSCRIPTION", "pubsub_ingestion_subscription"
+        ),
+    )
 
     # Secret: shared API key for the X-API-Key header. Mandatory in production.
     api_key: SecretStr = Field(

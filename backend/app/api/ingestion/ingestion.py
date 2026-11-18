@@ -21,13 +21,21 @@ from app.models.request.ingestion import (
     CreateDocumentLinkRequest,
     DocumentLinkResponse,
     DocumentLinksOverviewResponse,
+    FolderWatchSubscriptionRequest,
+    FolderWatchSubscriptionResponse,
     IndexedDocumentResponse,
+    IngestionEventResponse,
     IngestionJobRequest,
     IngestionJobResponse,
+    IngestionWebhookEventRequest,
+    PubSubPublishResponse,
+    PubSubPushEnvelopeRequest,
     SalesforceSharedPathIngestionRequest,
     SharedPathIngestionRequest,
 )
+from app.services.ingestion.event_listener import IngestionEvent
 from app.services.ingestion.folder_scanner import resolve_folder_scanner
+from app.services.ingestion.pubsub import decode_pubsub_message
 from app.services.ingestion.service import IngestionJob, IngestionService, JobStatus
 from app.services.salesforce.salesforce_service import SalesforceService
 from app.services.storage.storage_service import StorageService
@@ -342,3 +350,323 @@ async def delete_document_link(
     """Remove an admin document link and update vector payloads."""
     link = await run_in_threadpool(service.unlink_documents, document_id, link_id)
     return DocumentLinkResponse(**asdict(link))
+
+
+# ------------------------------------------------------------------ Event Listener & Folder Watcher
+@router.post(
+    "/events/webhook",
+    status_code=202,
+    response_model=IngestionEventResponse,
+    summary="Receive file/folder events and trigger background ingestion",
+)
+async def receive_ingestion_webhook_event(
+    request: IngestionWebhookEventRequest,
+    background_tasks: BackgroundTasks,
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+    storage: StorageService = Depends(get_storage_service_dependency),
+    salesforce: SalesforceService = Depends(get_salesforce_service_dependency),
+) -> IngestionEventResponse:
+    """Handle a real-time file/folder event (upload, GCS Pub/Sub, Salesforce, S3) and queue ingestion."""
+    import uuid
+
+    service.registry.register_application(request.application_id)
+    job_request = IngestionJobRequest(
+        application_id=request.application_id,
+        source_type="shared_path",
+        provider=request.provider,
+        shared_paths=request.paths,
+        zone=request.zone,
+    )
+    job = service.jobs.create("shared_path", application_id=request.application_id)
+    event = IngestionEvent(
+        event_id=uuid.uuid4().hex[:16],
+        event_type=request.event_type,
+        application_id=request.application_id,
+        provider=request.provider,
+        paths=tuple(request.paths),
+        zone=request.zone,
+    )
+    service.event_listener.record_event(event, job.job_id)
+    background_tasks.add_task(run_ingestion_job, job, job_request, service, storage, salesforce)
+    return IngestionEventResponse(
+        event_id=event.event_id,
+        event_type=event.event_type,
+        application_id=event.application_id,
+        provider=event.provider,
+        paths=list(event.paths),
+        zone=event.zone,
+        received_at=event.received_at,
+        job_id=job.job_id,
+    )
+
+
+@router.post(
+    "/events/subscriptions",
+    status_code=201,
+    response_model=FolderWatchSubscriptionResponse,
+    summary="Subscribe a shared folder to the Event Listener watcher",
+)
+async def create_folder_watch_subscription(
+    request: FolderWatchSubscriptionRequest,
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+) -> FolderWatchSubscriptionResponse:
+    """Register a shared folder path to watch for newly added or modified files."""
+    service.registry.register_application(request.application_id)
+    sub = service.event_listener.add_subscription(
+        application_id=request.application_id,
+        provider=request.provider,
+        shared_path=request.shared_path,
+        zone=request.zone,
+    )
+    return FolderWatchSubscriptionResponse(**asdict(sub))
+
+
+@router.get(
+    "/events/subscriptions",
+    response_model=list[FolderWatchSubscriptionResponse],
+)
+async def list_folder_watch_subscriptions(
+    application_id: str | None = Query(default=None),
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+) -> list[FolderWatchSubscriptionResponse]:
+    """List active folder-watch subscriptions."""
+    return [
+        FolderWatchSubscriptionResponse(**asdict(s))
+        for s in service.event_listener.list_subscriptions(application_id=application_id)
+    ]
+
+
+@router.delete(
+    "/events/subscriptions/{subscription_id}",
+    response_model=FolderWatchSubscriptionResponse,
+)
+async def delete_folder_watch_subscription(
+    subscription_id: str,
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+) -> FolderWatchSubscriptionResponse:
+    sub = service.event_listener.remove_subscription(subscription_id)
+    return FolderWatchSubscriptionResponse(**asdict(sub))
+
+
+@router.post(
+    "/events/poll",
+    response_model=list[IngestionEventResponse],
+    summary="Poll watched folders and trigger ingestion events for new/changed files",
+)
+async def poll_watched_folders(
+    background_tasks: BackgroundTasks,
+    application_id: str | None = Query(default=None),
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+    storage: StorageService = Depends(get_storage_service_dependency),
+    salesforce: SalesforceService = Depends(get_salesforce_service_dependency),
+) -> list[IngestionEventResponse]:
+    """Scan all watched folders, detect newly arrived or modified files, and queue background ingestion."""
+    import hashlib
+    import uuid
+
+    triggered: list[IngestionEventResponse] = []
+    subscriptions = service.event_listener.list_subscriptions(application_id=application_id)
+    for sub in subscriptions:
+        if not sub.enabled:
+            continue
+        scanner = resolve_folder_scanner(
+            sub.provider,
+            storage=storage,
+            salesforce=salesforce,
+        )
+        discovered = await scanner.list_files([sub.shared_path], zone=sub.zone, limit=200)
+        fingerprints: list[tuple[str, str]] = []
+        for item in discovered:
+            try:
+                raw = await scanner.read_file(item)
+                fp = hashlib.sha256(raw).hexdigest()[:16]
+            except Exception:
+                fp = item.file_key
+            fingerprints.append((item.file_key, fp))
+
+        new_keys = service.event_listener.detect_new_files(sub.subscription_id, fingerprints)
+        if not new_keys:
+            continue
+
+        job_request = IngestionJobRequest(
+            application_id=sub.application_id,
+            source_type="shared_path",
+            provider=sub.provider,  # type: ignore[arg-type]
+            shared_paths=new_keys,
+            zone=sub.zone,  # type: ignore[arg-type]
+        )
+        job = service.jobs.create("shared_path", application_id=sub.application_id)
+        sub.last_job_id = job.job_id
+        event = IngestionEvent(
+            event_id=uuid.uuid4().hex[:16],
+            event_type="folder.detected",
+            application_id=sub.application_id,
+            provider=sub.provider,
+            paths=tuple(new_keys),
+            zone=sub.zone,
+        )
+        service.event_listener.record_event(event, job.job_id)
+        background_tasks.add_task(run_ingestion_job, job, job_request, service, storage, salesforce)
+        triggered.append(
+            IngestionEventResponse(
+                event_id=event.event_id,
+                event_type=event.event_type,
+                application_id=event.application_id,
+                provider=event.provider,
+                paths=list(event.paths),
+                zone=event.zone,
+                received_at=event.received_at,
+                job_id=job.job_id,
+            )
+        )
+    return triggered
+
+
+@router.get("/events", response_model=list[IngestionEventResponse])
+async def list_ingestion_events(
+    application_id: str | None = Query(default=None),
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+) -> list[IngestionEventResponse]:
+    """List recent events processed by the Event Listener."""
+    return [
+        IngestionEventResponse(
+            event_id=ev.event_id,
+            event_type=ev.event_type,
+            application_id=ev.application_id,
+            provider=ev.provider,
+            paths=list(ev.paths),
+            zone=ev.zone,
+            received_at=ev.received_at,
+            job_id=jid,
+        )
+        for ev, jid in service.event_listener.list_recent_events(application_id=application_id)
+    ]
+
+
+# ------------------------------------------------------------------ Google Cloud Pub/Sub Publisher & Subscriber
+@router.post(
+    "/events/pubsub/publish",
+    status_code=202,
+    response_model=PubSubPublishResponse,
+    summary="Publish an ingestion event to Google Cloud Pub/Sub",
+)
+async def publish_ingestion_event_to_pubsub(
+    request: IngestionWebhookEventRequest,
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+) -> PubSubPublishResponse:
+    """Publish a file/folder ingestion event to the configured Cloud Pub/Sub topic."""
+    import uuid
+
+    service.registry.register_application(request.application_id)
+    event = IngestionEvent(
+        event_id=uuid.uuid4().hex[:16],
+        event_type=request.event_type,
+        application_id=request.application_id,
+        provider=request.provider,
+        paths=tuple(request.paths),
+        zone=request.zone,
+    )
+    msg_id = await run_in_threadpool(service.pubsub.publish, event)
+    return PubSubPublishResponse(
+        message_id=msg_id,
+        event_id=event.event_id,
+        application_id=event.application_id,
+        provider=event.provider,
+        paths=list(event.paths),
+    )
+
+
+@router.post(
+    "/events/pubsub/push",
+    status_code=202,
+    response_model=IngestionEventResponse,
+    summary="Receive Google Cloud Pub/Sub Push Subscription or GCS OBJECT_FINALIZE messages",
+)
+async def receive_pubsub_push_message(
+    envelope: PubSubPushEnvelopeRequest,
+    background_tasks: BackgroundTasks,
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+    storage: StorageService = Depends(get_storage_service_dependency),
+    salesforce: SalesforceService = Depends(get_salesforce_service_dependency),
+) -> IngestionEventResponse:
+    """Decode a Cloud Pub/Sub Push message (custom event or native GCS OBJECT_FINALIZE) and queue ingestion."""
+    received = decode_pubsub_message(
+        envelope.message,
+        subscription=envelope.subscription,
+    )
+    ev = received.event
+    service.registry.register_application(ev.application_id)
+    job_request = IngestionJobRequest(
+        application_id=ev.application_id,
+        source_type="shared_path",
+        provider=ev.provider,  # type: ignore[arg-type]
+        shared_paths=list(ev.paths),
+        zone=ev.zone,  # type: ignore[arg-type]
+    )
+    job = service.jobs.create("shared_path", application_id=ev.application_id)
+    service.event_listener.record_event(ev, job.job_id)
+    background_tasks.add_task(run_ingestion_job, job, job_request, service, storage, salesforce)
+    return IngestionEventResponse(
+        event_id=ev.event_id,
+        event_type=ev.event_type,
+        application_id=ev.application_id,
+        provider=ev.provider,
+        paths=list(ev.paths),
+        zone=ev.zone,
+        received_at=ev.received_at,
+        job_id=job.job_id,
+        pubsub_message_id=received.message_id,
+    )
+
+
+@router.post(
+    "/events/pubsub/pull",
+    response_model=list[IngestionEventResponse],
+    summary="Pull pending messages from Google Cloud Pub/Sub subscription and queue ingestion",
+)
+async def pull_pubsub_messages(
+    background_tasks: BackgroundTasks,
+    max_messages: int = Query(default=10, ge=1, le=100),
+    service: IngestionService = Depends(get_ingestion_service_dependency),
+    storage: StorageService = Depends(get_storage_service_dependency),
+    salesforce: SalesforceService = Depends(get_salesforce_service_dependency),
+) -> list[IngestionEventResponse]:
+    """Pull messages from the configured Pub/Sub subscription, queue background ingestion, and acknowledge."""
+    messages = await run_in_threadpool(service.pubsub.pull, max_messages)
+    if not messages:
+        return []
+
+    ack_ids: list[str] = []
+    responses: list[IngestionEventResponse] = []
+    for received in messages:
+        ev = received.event
+        service.registry.register_application(ev.application_id)
+        job_request = IngestionJobRequest(
+            application_id=ev.application_id,
+            source_type="shared_path",
+            provider=ev.provider,  # type: ignore[arg-type]
+            shared_paths=list(ev.paths),
+            zone=ev.zone,  # type: ignore[arg-type]
+        )
+        job = service.jobs.create("shared_path", application_id=ev.application_id)
+        service.event_listener.record_event(ev, job.job_id)
+        background_tasks.add_task(run_ingestion_job, job, job_request, service, storage, salesforce)
+        if received.ack_id:
+            ack_ids.append(received.ack_id)
+        responses.append(
+            IngestionEventResponse(
+                event_id=ev.event_id,
+                event_type=ev.event_type,
+                application_id=ev.application_id,
+                provider=ev.provider,
+                paths=list(ev.paths),
+                zone=ev.zone,
+                received_at=ev.received_at,
+                job_id=job.job_id,
+                pubsub_message_id=received.message_id,
+            )
+        )
+
+    if ack_ids:
+        await run_in_threadpool(service.pubsub.ack, ack_ids)
+    return responses

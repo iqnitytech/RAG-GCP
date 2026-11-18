@@ -13,8 +13,10 @@ from typing import Any, Mapping
 
 from app.services.ingestion.chunker import chunk_text
 from app.services.ingestion.embedder import Embedder
+from app.services.ingestion.event_listener import IngestionEventListener
 from app.services.ingestion.ocr import OcrProvider
 from app.services.ingestion.parsers import normalise_whitespace, parse_document
+from app.services.ingestion.pubsub import InMemoryPubSubBroker, PubSubBroker
 from app.services.ingestion.registry import (
     DEFAULT_APPLICATION_ID,
     DocumentLink,
@@ -120,6 +122,7 @@ class IngestionService:
         chunk_overlap: int = 200,
         ocr: OcrProvider | None = None,
         registry: DocumentRegistry | None = None,
+        pubsub: PubSubBroker | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = vector_store
@@ -128,6 +131,8 @@ class IngestionService:
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
         self.jobs = JobStore()
+        self.event_listener = IngestionEventListener()
+        self.pubsub: PubSubBroker = pubsub or InMemoryPubSubBroker()
         self._indexed_docs: set[str] = set()
         self._lock = Lock()
 

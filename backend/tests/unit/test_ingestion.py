@@ -456,6 +456,195 @@ def test_multi_application_id_scoping_cpq_and_customer_experience(api):
     assert "different applications" in cross_link.json()["detail"].lower()
 
 
+def test_event_listener_webhook_and_folder_watcher_subscriptions(api, tmp_path, monkeypatch):
+    client, store = api
+    monkeypatch.setattr(get_settings(), "shared_folders_root", str(tmp_path))
+
+    # 1. Push Webhook Event Listener (POST /ingestion/events/webhook)
+    wh = client.post(
+        "/ingestion/events/webhook",
+        json={
+            "event_type": "file.created",
+            "application_id": "CPQ",
+            "provider": "gcs",
+            "paths": ["docs/a.txt"],
+        },
+    )
+    assert wh.status_code == 202
+    wh_data = wh.json()
+    assert wh_data["event_type"] == "file.created"
+    assert wh_data["application_id"] == "CPQ"
+    wh_job = wait_done(client, wh_data["job_id"])
+    assert wh_job["files_processed"] == 1 and wh_job["files_succeeded"] == 1
+
+    # 2. Folder Watch Subscription + Delta Polling (POST /ingestion/events/subscriptions & /poll)
+    watch_dir = tmp_path / "cx_inbox"
+    watch_dir.mkdir(parents=True)
+    (watch_dir / "ticket_1.txt").write_text(
+        "Customer onboarding guide and SLA escalation matrix. " * 15,
+        encoding="utf-8",
+    )
+
+    sub_resp = client.post(
+        "/ingestion/events/subscriptions",
+        json={
+            "application_id": "CustomerExperience",
+            "provider": "filesystem",
+            "shared_path": "cx_inbox",
+        },
+    )
+    assert sub_resp.status_code == 201
+    sub_id = sub_resp.json()["subscription_id"]
+
+    # First poll detects ticket_1.txt and triggers 1 background job
+    poll_1 = client.post("/ingestion/events/poll", params={"application_id": "CustomerExperience"})
+    assert poll_1.status_code == 200
+    events_1 = poll_1.json()
+    assert len(events_1) == 1
+    assert events_1[0]["paths"] == ["cx_inbox/ticket_1.txt"]
+    wait_done(client, events_1[0]["job_id"])
+
+    # Second poll with no new/changed files triggers 0 events
+    poll_2 = client.post("/ingestion/events/poll", params={"application_id": "CustomerExperience"})
+    assert poll_2.json() == []
+
+    # Drop a new file into the watched folder -> third poll detects only the new file
+    (watch_dir / "ticket_2.txt").write_text(
+        "VIP customer support playbook and response time targets. " * 15,
+        encoding="utf-8",
+    )
+    poll_3 = client.post("/ingestion/events/poll", params={"application_id": "CustomerExperience"})
+    events_3 = poll_3.json()
+    assert len(events_3) == 1
+    assert events_3[0]["paths"] == ["cx_inbox/ticket_2.txt"]
+    wait_done(client, events_3[0]["job_id"])
+
+    # Verify subscription counters and event history
+    subs = client.get(
+        "/ingestion/events/subscriptions", params={"application_id": "CustomerExperience"}
+    ).json()
+    assert subs[0]["events_triggered"] == 2
+    assert subs[0]["files_detected_total"] == 2
+
+    recent_events = client.get(
+        "/ingestion/events", params={"application_id": "CustomerExperience"}
+    ).json()
+    assert len(recent_events) == 2
+
+    # Unsubscribe watched folder
+    assert client.delete(f"/ingestion/events/subscriptions/{sub_id}").status_code == 200
+
+
+def test_google_cloud_pubsub_publish_pull_push_and_gcs_object_finalize(api):
+    import base64
+    import json
+    from app.services.ingestion.pubsub import GcpPubSubBroker
+
+    client, store = api
+
+    # 1. Publish an ingestion event to Pub/Sub (POST /ingestion/events/pubsub/publish)
+    pub = client.post(
+        "/ingestion/events/pubsub/publish",
+        json={
+            "event_type": "file.created",
+            "application_id": "CPQ",
+            "provider": "gcs",
+            "paths": ["docs/a.txt"],
+        },
+    )
+    assert pub.status_code == 202
+    pub_body = pub.json()
+    assert pub_body["message_id"].startswith("pubsub-")
+    assert pub_body["application_id"] == "CPQ"
+
+    # 2. Pull from Pub/Sub subscription (POST /ingestion/events/pubsub/pull) -> queues job & acks
+    pulled = client.post("/ingestion/events/pubsub/pull")
+    assert pulled.status_code == 200
+    pulled_events = pulled.json()
+    assert len(pulled_events) == 1
+    assert pulled_events[0]["pubsub_message_id"] == pub_body["message_id"]
+    pulled_job = wait_done(client, pulled_events[0]["job_id"])
+    assert pulled_job["files_processed"] == 1 and pulled_job["files_succeeded"] == 1
+
+    # Second pull returns empty because the message was acknowledged
+    assert client.post("/ingestion/events/pubsub/pull").json() == []
+
+    # 3. Native GCS Bucket Notification (OBJECT_FINALIZE) via Pub/Sub Push Subscription
+    gcs_notification = {
+        "bucket": "rag-enterprise-bucket",
+        "name": "docs/b.txt",
+        "metadata": {"application_id": "CustomerExperience"},
+    }
+    b64_data = base64.b64encode(json.dumps(gcs_notification).encode("utf-8")).decode("ascii")
+    push_resp = client.post(
+        "/ingestion/events/pubsub/push",
+        json={
+            "message": {
+                "messageId": "gcp-msg-991",
+                "data": b64_data,
+                "attributes": {
+                    "eventType": "OBJECT_FINALIZE",
+                    "bucketId": "rag-enterprise-bucket",
+                },
+            },
+            "subscription": "projects/p/subscriptions/rag-ingestion-sub",
+        },
+    )
+    assert push_resp.status_code == 202
+    push_data = push_resp.json()
+    assert push_data["application_id"] == "CustomerExperience"
+    assert push_data["provider"] == "gcs"
+    assert push_data["paths"] == ["docs/b.txt"]
+    assert push_data["pubsub_message_id"] == "gcp-msg-991"
+    push_job = wait_done(client, push_data["job_id"])
+    assert push_job["files_processed"] == 1 and push_job["files_succeeded"] == 1
+
+    # 4. GcpPubSubBroker REST v1 (:publish, :pull, :acknowledge)
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path.endswith(":publish"):
+            return httpx.Response(200, json={"messageIds": ["1001"]})
+        if request.url.path.endswith(":pull"):
+            return httpx.Response(
+                200,
+                json={
+                    "receivedMessages": [
+                        {
+                            "ackId": "ack-1001",
+                            "message": {
+                                "messageId": "1001",
+                                "data": b64_data,
+                                "attributes": {"eventType": "OBJECT_FINALIZE"},
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json={})
+
+    class Creds:
+        valid = True
+        token = "gcp-token"
+
+    broker = GcpPubSubBroker(
+        project_id="my-proj",
+        topic="rag-topic",
+        subscription="rag-sub",
+        credentials_getter=lambda: Creds(),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    msgs = broker.pull(max_messages=5)
+    assert len(msgs) == 1 and msgs[0].ack_id == "ack-1001"
+    msg_id = broker.publish(msgs[0].event)
+    assert msg_id == "1001"
+    broker.ack([msgs[0].ack_id])
+    assert any(p.endswith(":publish") for _, p in calls)
+    assert any(p.endswith(":pull") for _, p in calls)
+    assert any(p.endswith(":acknowledge") for _, p in calls)
+
+
 def test_admin_portal_document_linking_and_vector_payload_sync(api):
     client, store = api
 
