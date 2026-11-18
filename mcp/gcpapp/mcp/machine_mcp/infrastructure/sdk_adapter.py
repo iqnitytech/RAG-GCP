@@ -7,6 +7,7 @@ from typing import Optional, Any
 
 from config.settings import Settings
 from common.domain.value_objects import MachineId, SiteId
+from common.infrastructure.connector import create_connector
 from common.infrastructure.resilience import call_sdk_with_retry, handle_sdk_exception, retry_with_backoff
 from core.exceptions import (
     AuthenticationError,
@@ -37,31 +38,13 @@ class SdkMachineAdapter(MachineRepositoryPort):
 
     def _get_connector(self) -> Any:
         if self._connector is None:
-            if not self._settings.SDK_API_KEY:
-                raise AuthenticationError("SDK_API_KEY is not configured or empty. Please set SDK_API_KEY in your environment.")
-            if not self._settings.SDK_BASE_URL:
-                raise SdkGatewayError("SDK_BASE_URL is not configured or empty. Please set SDK_BASE_URL in your environment.")
             try:
-                from sdk.connectors.edh import EdhConnector
-                from sdk.models import EdhConnectorConfig
-
-                def get_api_key() -> str:
-                    key = self._settings.SDK_API_KEY
-                    if not key:
-                        raise AuthenticationError("SDK_API_KEY is not configured or empty")
-                    return key
-
-                # SEC-01: No fallback to placeholder credentials (e.g. 'dev-key').
-                # Settings already validated at startup and key getter explicitly validates key.
-                config = EdhConnectorConfig(
+                self._connector = create_connector(
+                    self._settings,
                     strategy="api_hub",
                     namespace="machine",
-                    endpoint_url=self._settings.SDK_BASE_URL,
-                    api_key_getter=get_api_key,
-                    timeout_seconds=float(self._settings.SDK_TIMEOUT_SECONDS),
                 )
-                self._connector = EdhConnector(config)
-            except (AuthenticationError, RateLimitError):
+            except (AuthenticationError, RateLimitError, SdkGatewayError):
                 raise
             except Exception as e:
                 logger.error("Failed to initialize EdhConnector for Machine", error=str(e))

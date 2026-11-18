@@ -19,6 +19,34 @@ def test_intent_router_customer_profile():
     assert intent.arguments["customer_id"] == "CUST-001001"
 
 
+def test_intent_router_customer_numeric_number():
+    router = McpIntentRouter()
+    queries = [
+        "customer details for customer number 234",
+        "customer details for customer no 234",
+        "customer details for customer #234",
+        "customer 234",
+        "customer details for 234",
+        "lookup customer 234",
+    ]
+    for q in queries:
+        intent = router.route(q)
+        assert intent.server_id == "customer", f"Failed server for: {q}"
+        assert intent.tool_name == "customer_get_profile", f"Failed tool for: {q}"
+        assert intent.arguments["customer_id"] == "234", f"Failed customer_id for: {q}"
+
+
+def test_intent_router_customer_numeric_entitlements_and_machines():
+    router = McpIntentRouter()
+    intent_ent = router.route("What service entitlements does customer 234 have?")
+    assert intent_ent.tool_name == "customer_get_entitlements"
+    assert intent_ent.arguments["customer_id"] == "234"
+
+    intent_mch = router.route("Which machines are assigned to customer 234?")
+    assert intent_mch.tool_name == "customer_get_assigned_machines"
+    assert intent_mch.arguments["customer_id"] == "234"
+
+
 def test_intent_router_customer_search():
     router = McpIntentRouter()
     intent = router.route("Find mining customers in NA-WEST region")
@@ -108,3 +136,4 @@ def test_chat_api_process_chat_sdk_mode(client: TestClient):
     assert data["mode"] == "SDK"
     assert data["tool_used"] == "customer_get_profile"
     assert "Authentication" in data["reply"]
+

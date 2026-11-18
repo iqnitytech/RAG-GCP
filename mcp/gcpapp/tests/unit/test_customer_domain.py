@@ -14,6 +14,8 @@ from mcp.customer_mcp.domain.entities import (
 def test_customer_id_validation_success():
     cid = CustomerId("CUST-001001")
     assert str(cid) == "CUST-001001"
+    cid_numeric = CustomerId("234")
+    assert str(cid_numeric) == "234"
 
 
 def test_customer_id_validation_failure():

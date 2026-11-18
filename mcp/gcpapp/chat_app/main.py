@@ -98,9 +98,18 @@ async def serve_index():
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Enterprise MCP Chat Agent")
+    parser.add_argument("--host", default=settings.CHAT_HOST, help="Host address to bind to")
+    parser.add_argument("--port", type=int, default=settings.CHAT_PORT, help="Port to listen on")
+    parser.add_argument("--reload", action="store_true", default=False, help="Enable auto-reload")
+    args = parser.parse_args()
+
     uvicorn.run(
         "chat_app.main:app",
-        host=settings.CHAT_HOST,
-        port=settings.CHAT_PORT,
-        reload=False,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
     )
+

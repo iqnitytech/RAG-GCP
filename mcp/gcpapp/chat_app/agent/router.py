@@ -11,6 +11,86 @@ STATE_RE = re.compile(r"\b(ACTIVE|MAINTENANCE|STANDBY|OFFLINE|DECOMMISSIONED)\b"
 REGION_RE = re.compile(r"\b(NA-EAST|NA-WEST|EU-WEST|APAC|LATAM)\b", re.IGNORECASE)
 
 
+def extract_customer_id(text: str) -> str | None:
+    """Extract a customer ID from natural language query.
+
+    Supports:
+    - Standard CUST-XXXX patterns (e.g. CUST-001001, CUST-1002)
+    - Natural language phrases: 'customer number 234', 'customer no. 234', 'customer #234', 'customer id 234'
+    - Direct expressions: 'customer 234', 'customer: 234', 'client 234', 'customer number: 234'
+    - '... for customer 234' or '... for customer number 234'
+    """
+    # 1. Standard pattern: CUST-XXXX
+    m = re.search(r"\b(CUST-[A-Za-z0-9\-]+)\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+
+    # 2. "customer/client ... number/no/id/code/# [: #] <id>"
+    # Handles: "customer number 234", "customer number: 234", "customer no 234", "customer id 234", "customer #234"
+    m = re.search(
+        r"\b(?:customer|client)?\s*(?:number|no\.?|id|code|#)\s*[:#]?\s*([A-Za-z0-9\-]+)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        val = m.group(1)
+        if val.lower() not in {"is", "the", "for", "and", "or", "to", "in", "a", "an", "details", "profile"}:
+            return val
+
+    # 3. Direct digits following customer/client context
+    # e.g. "customer 234", "customer: 234", "details for customer 234", "customer details for 234", "lookup customer 234"
+    if any(w in text.lower() for w in ["customer", "client"]):
+        m = re.search(r"\b(\d+)\b", text)
+        if m:
+            return m.group(1)
+
+    # 4. "customer/client <id>" where <id> is alphanumeric and not a stopword
+    m = re.search(r"\b(?:customer|client)\s+([A-Za-z0-9\-]+)\b", text, re.IGNORECASE)
+    if m:
+        val = m.group(1)
+        stopwords = {
+            "details", "profile", "search", "list", "name", "info", "data", "entitlement",
+            "entitlements", "machine", "machines", "service", "support", "contract", "account",
+            "tier", "region", "sla", "representative", "reps", "is", "the", "for", "with", "and",
+        }
+        if val.lower() not in stopwords:
+            return val
+
+    return None
+
+
+def extract_machine_id(text: str) -> str | None:
+    """Extract a machine ID from natural language query.
+
+    Supports:
+    - Standard MCH-XXXX-XXXX patterns
+    - Natural language phrases: 'machine number 123', 'machine #123', 'machine 123'
+    """
+    m = re.search(r"\b(MCH-[A-Za-z0-9]{4}-[A-Za-z0-9]{4})\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+
+    m = re.search(r"\b(MCH-[A-Za-z0-9\-]+)\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+
+    m = re.search(
+        r"\bmachine\s+(?:number|no\.?|id|code|#)\s*[:#]?\s*([A-Za-z0-9\-]+)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        val = m.group(1)
+        if val.lower() not in {"is", "the", "for", "and", "or", "to", "in", "a", "an", "details", "specs"}:
+            return val
+
+    m = re.search(r"\bmachine\s*[:#]?\s*(\d+)\b", text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+
+    return None
+
+
 @dataclass
 class RoutedIntent:
     server_id: str
@@ -28,15 +108,13 @@ class McpIntentRouter:
         q_lower = q.lower()
 
         # Entity extraction
-        cust_match = CUSTOMER_ID_RE.search(q)
-        mch_match = MACHINE_ID_RE.search(q)
+        cust_id = extract_customer_id(q)
+        mch_id = extract_machine_id(q)
         fault_match = FAULT_CODE_RE.search(q)
         sev_match = SEVERITY_RE.search(q)
         state_match = STATE_RE.search(q)
         region_match = REGION_RE.search(q)
 
-        cust_id = cust_match.group(0).upper() if cust_match else None
-        mch_id = mch_match.group(0).upper() if mch_match else None
         fault_code = fault_match.group(0).upper() if fault_match else None
         severity = sev_match.group(0).upper() if sev_match else None
         state = state_match.group(0).upper() if state_match else None
@@ -157,7 +235,7 @@ class McpIntentRouter:
         # -------------------------------------------------------------
         # 3. Customer Domain Routing
         # -------------------------------------------------------------
-        if any(w in q_lower for w in ["assigned machine", "customer's machines", "customer machines", "machines assigned"]):
+        if ("machine" in q_lower and "assigned" in q_lower) or any(w in q_lower for w in ["assigned machine", "customer's machines", "customer machines", "machines assigned"]):
             target_cust = cust_id or "CUST-001001"
             return RoutedIntent(
                 server_id="customer",
@@ -177,7 +255,7 @@ class McpIntentRouter:
                 reasoning=f"Question asks for SLA and service entitlements for customer '{target_cust}'.",
             )
 
-        if any(w in q_lower for w in ["search", "find customer", "lookup customer", "industry", "directory", "filter customers"]) or (region and not cust_id):
+        if (any(w in q_lower for w in ["search", "find customer", "lookup customer", "industry", "directory", "filter customers"]) and not cust_id) or (region and not cust_id):
             # Extract query term
             search_query = ""
             for word in ["mining", "construction", "logistics", "energy", "transport", "nexus"]:

@@ -189,6 +189,22 @@ _CUSTOMERS: list[Customer] = [
         employee_count=270,
         annual_revenue_usd=37_000_000,
     ),
+    Customer(
+        customer_id=CustomerId("234"),
+        company_name="Apex Global Logistics #234",
+        tier="PREMIUM",
+        billing_status="ACTIVE",
+        region="NA-WEST",
+        industry="Industrial Automation",
+        address=Address(street="234 Logistics Way", city="San Francisco", state="CA", country="USA", postal_code="94105"),
+        account_representatives=[
+            AccountRepresentative(rep_id="REP-234", name="Sarah Connor", email="s.connor@gcpapp.com", phone="+1-415-555-0234", role="Lead Solutions Architect"),
+        ],
+        created_at=datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc),
+        employee_count=1200,
+        annual_revenue_usd=150_000_000,
+    ),
 ]
 
 _CUSTOMER_INDEX: dict[str, Customer] = {str(c.customer_id): c for c in _CUSTOMERS}
@@ -222,6 +238,9 @@ _MACHINE_DATA: dict[str, list[tuple[str, str, str, date]]] = {
     "CUST-001008": [],
     "CUST-001009": [],
     "CUST-001010": [],
+    "234": [
+        ("MCH-A1B2-C3D4", "SITE-A1B2", "NX-3000", date(2023, 2, 1)),
+    ],
 }
 
 # SLA / entitlement data by tier

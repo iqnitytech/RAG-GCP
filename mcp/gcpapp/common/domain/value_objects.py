@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from core.exceptions import DomainValidationError
 
-CUSTOMER_ID_RE = re.compile(r"^[A-Z0-9\-]{6,36}$")
+CUSTOMER_ID_RE = re.compile(r"^[A-Za-z0-9\-]{1,36}$")
 MACHINE_ID_RE = re.compile(r"^MCH-[A-Z0-9]{4}-[A-Z0-9]{4}$")
 SITE_ID_RE = re.compile(r"^SITE-[A-Z0-9]{4}$")
 
