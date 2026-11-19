@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise MCP Chat Agent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Markdown parser for rich formatted replies -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="agent-logo">🤖</div>
+        <div>
+          <h1 class="agent-title">Enterprise MCP Chat Agent</h1>
+          <p class="agent-subtitle">Automated Intent Routing & Real-time Tool Calling across Multi-MCP Architecture</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <!-- MOCK / SDK Mode Switcher -->
+        <div class="mode-switcher-container">
+          <span class="mode-label">Data Mode:</span>
+          <div class="mode-toggle-group">
+            <button id="btn-mode-mock" class="mode-toggle-btn active" title="Use Mock Enterprise Data Provider">
+              <span class="mode-dot dot-mock"></span> MOCK
+            </button>
+            <button id="btn-mode-sdk" class="mode-toggle-btn" title="Use Enterprise Data Hub SDK Adapter (requires SDK credentials)">
+              <span class="mode-dot dot-sdk"></span> SDK
+            </button>
+          </div>
+        </div>
+        <div class="status-indicator" id="system-status">
+          <span class="status-dot"></span> System Ready
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-body">
+      <!-- Left Sidebar: Sample Questions & Prompts -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title">
+            <span>💡 Sample Test Questions</span>
+            <span class="badge" id="sample-count">12</span>
+          </div>
+          <p class="sidebar-desc">Click any question to auto-fill the chat and test tool routing in local mode.</p>
+          <div class="category-filters" id="category-filters">
+            <button class="cat-pill active" data-category="ALL">All</button>
+            <button class="cat-pill" data-category="Customer">Customer</button>
+            <button class="cat-pill" data-category="Machine">Machine</button>
+            <button class="cat-pill" data-category="Telemetry">Telemetry</button>
+          </div>
+        </div>
+
+        <div class="samples-list" id="samples-container">
+          <!-- Populated dynamically via JS -->
+          <div class="loading-state">Loading sample questions...</div>
+        </div>
+      </aside>
+
+      <!-- Center: Chat Conversation Pane -->
+      <main class="chat-pane">
+        <div class="chat-messages" id="chat-messages">
+          <!-- Welcome / Greeting Message -->
+          <div class="message-row assistant">
+            <div class="avatar">🤖</div>
+            <div class="message-content">
+              <div class="message-header">
+                <span class="sender-name">MCP Chat Agent</span>
+                <span class="message-time">Just now</span>
+              </div>
+              <div class="message-bubble">
+                <p>Hello! I am your <strong>Enterprise Multi-MCP Agent</strong>. I can automatically identify and invoke the right MCP tools based on your questions across:</p>
+                <ul>
+                  <li>🏢 <strong>Customer MCP</strong> — 360-degree profiles, directory search, SLA entitlements, and machine assignments</li>
+                  <li>🚜 <strong>Machine MCP</strong> — Hardware specs, fleet registries, maintenance history, and operational state transitions</li>
+                  <li>📊 <strong>Telemetry MCP</strong> — High-frequency sensor snapshots, aggregated range trends, active alerts, and fault code diagnosis</li>
+                </ul>
+                <p>You can switch between <strong>MOCK</strong> and <strong>SDK</strong> mode using the toggle in the top-right header to test and debug local execution. Pick a sample question from the left or type your own question below!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="chat-input-area">
+          <div class="input-container">
+            <textarea id="chat-input" rows="1" placeholder="Ask a question (e.g. 'Show me the profile for customer CUST-001001' or 'Diagnose fault code E-001')..."></textarea>
+            <div class="input-actions">
+              <span class="active-mode-badge" id="input-mode-badge">MODE: MOCK</span>
+              <button id="btn-clear-chat" class="btn-secondary" title="Clear conversation history">🗑️ Clear</button>
+              <button id="btn-send" class="btn-primary">
+                <span>Send</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
+          </div>
+          <div class="input-footer">
+            <span>Press <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new line.</span>
+            <span id="typing-indicator" style="display: none;">Routing intent & invoking MCP tool...</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

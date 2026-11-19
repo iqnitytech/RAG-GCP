@@ -1,0 +1,32 @@
+# ==============================================================================
+# Enterprise Multi-MCP Platform (gcpapp) Dependencies
+# Python Version: >= 3.11
+# ==============================================================================
+
+# Core MCP Platform & Architecture
+mcp>=1.0.0
+pydantic>=2.7.0
+pydantic-settings>=2.0.0
+structlog>=24.1.0
+tenacity>=8.2.0
+python-dotenv>=1.0.0
+
+# Web Applications & API (client_app & chat_app)
+fastapi>=0.110.0
+uvicorn>=0.28.0
+starlette>=0.36.0
+sse-starlette>=2.0.0
+python-multipart>=0.0.9
+
+# Testing & Quality Assurance
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
+
+# ------------------------------------------------------------------------------
+# Internal Corporate SDK
+# Note: Install via local wheel distribution as documented in README.md:
+# pip install C:\stash\SDK\rag-platform-sdk\dist\rag_platform_sdk-0.2.0-py3-none-any.whl
+# Or uncomment the direct path requirement below:
+# rag-platform-sdk @ file:///C:/stash/SDK/rag-platform-sdk/dist/rag_platform_sdk-0.2.0-py3-none-any.whl
+# ------------------------------------------------------------------------------
