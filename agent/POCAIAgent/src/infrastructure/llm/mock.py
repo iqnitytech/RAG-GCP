@@ -23,7 +23,11 @@ def _select_tokens(text: str) -> set[str]:
 def _tok_match(token: str, word: str) -> bool:
     return word.startswith(token) or (len(word) >= 4 and token.startswith(word))
 
-_ID_PATTERNS = {"machine_id": r"\bM-\d+\b", "customer_id": r"\bC-\d+\b"}
+_ID_PATTERNS = {
+    "machine_id": r"\bM-\d+\b",
+    "customer_id": r"\b(?:C-\d+|CUST-[A-Za-z0-9]+|003[a-zA-Z0-9]{12,15}|(?<!-)\b\d+)\b",
+    "account_id": r"\b(?:ACC-[A-Za-z0-9]+|001[a-zA-Z0-9]{12,15}|(?<!-)\b\d+)\b",
+}
 _NAME_PATTERNS = (
     r"[\"']([^\"']+)[\"']",
     r"\b(?:named|called|name|matching)\s+([A-Za-z0-9][A-Za-z0-9 ]*?)(?=\s+(?:and|with|have|has)\b|[?.,]|$)",
@@ -56,7 +60,9 @@ class MockLLM:
         best: tuple[int, ToolCall] | None = None
         for tool in tools:
             props = tool.input_schema.get("properties", {})
-            required = tool.input_schema.get("required", list(props))
+            required = tool.input_schema.get("required")
+            if required is None:
+                required = [p for p in props if p in _ID_PATTERNS or p == "name"] or list(props)
             args = {p: _extract(p, message) for p in required}
             if any(v is None for v in args.values()):
                 continue

@@ -5,7 +5,17 @@ from domain.entities import Customer, Machine, TelemetryReading
 from domain.ports import SalesforcePort
 
 _MACHINE = ("Id", "Name", "Status", "CustomerId")
-_CUSTOMER = ("Id", "Name", "Tier")
+_CUSTOMER = ("Id", "Name", "Tier", "Phone", "AccountNumber", "Number")
+
+
+def _customer(r: dict) -> Customer:
+    return Customer(
+        id=r["Id"],
+        name=r["Name"],
+        tier=r["Tier"],
+        phone=r.get("Phone") or "",
+        number=r.get("AccountNumber") or r.get("Number") or r["Id"],
+    )
 _TELEMETRY = ("MachineId", "Temp", "Vibration", "Ts")
 
 
@@ -32,11 +42,23 @@ class SalesforceCustomerRepository:
 
     async def get(self, customer_id: str) -> Customer | None:
         rows = await self._sf.query("Customer", _CUSTOMER, {"Id": customer_id}, 1)
-        return Customer(rows[0]["Id"], rows[0]["Name"], rows[0]["Tier"]) if rows else None
+        return _customer(rows[0]) if rows else None
 
     async def search(self, name: str) -> list[Customer]:
         rows = await self._sf.search("Customer", _CUSTOMER, "Name", name)
-        return [Customer(r["Id"], r["Name"], r["Tier"]) for r in rows]
+        return [_customer(r) for r in rows]
+
+    async def get_by_number(self, number: str) -> Customer | None:
+        rows = await self._sf.query("Customer", _CUSTOMER, {"AccountNumber": number}, 1)
+        if not rows:
+            rows = await self._sf.query("Customer", _CUSTOMER, {"Number": number}, 1)
+        if not rows:
+            rows = await self._sf.query("Customer", _CUSTOMER, {"Id": number}, 1)
+        return _customer(rows[0]) if rows else None
+
+    async def get_by_phone(self, phone: str) -> Customer | None:
+        rows = await self._sf.query("Customer", _CUSTOMER, {"Phone": phone}, 1)
+        return _customer(rows[0]) if rows else None
 
 
 class SalesforceTelemetryRepository:

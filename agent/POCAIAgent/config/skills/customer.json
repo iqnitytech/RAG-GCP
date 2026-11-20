@@ -5,8 +5,17 @@
     {
       "id": "customer.get_customer",
       "name": "Customer details",
-      "tags": ["customer", "account", "tier"],
-      "examples": ["details of customer C-1", "what tier is C-2"],
+      "tags": ["customer", "contact", "tier", "profile"],
+      "examples": ["details of customer C-1", "what tier is C-2", "find contact C-1"],
+      "version": "1.0.0",
+      "status": "approved",
+      "owner": "customer-platform-team"
+    },
+    {
+      "id": "customer.get_account",
+      "name": "Account details",
+      "tags": ["account", "company", "tier", "organization", "billing"],
+      "examples": ["details of account ACC-1", "lookup account Acme", "what tier is account ACC-001", "get account details for ACC-1"],
       "version": "1.0.0",
       "status": "approved",
       "owner": "customer-platform-team"
@@ -14,7 +23,7 @@
     {
       "id": "customer.search_customers",
       "name": "Customer search",
-      "tags": ["customer", "search", "lookup", "name"],
+      "tags": ["customer", "search", "lookup", "name", "account"],
       "examples": ["find customer named Acme", "search customers matching Globex"],
       "version": "1.0.0",
       "status": "approved",

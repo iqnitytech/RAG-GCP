@@ -1,32 +1,47 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+import logging
+import os
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from domain.errors import NotFoundError
-from domain.ports import CustomerRepository
-from mcp_servers.common import require_role
+from mcp_servers.customer.adapters.factory import CustomerDataProviderFactory
+from mcp_servers.customer.ports import AccountRepositoryPort, CustomerRepositoryPort
+from mcp_servers.customer.tools import register_customer_tools
+from settings import Settings
 
-ROLE = "Customer.Read"
+logger = logging.getLogger("mcp.customer.server")
 
 
-def build_server(repo: CustomerRepository) -> FastMCP:
+def build_server(
+    repo: Any = None,
+    settings: Settings | None = None,
+    sf: Any = None,
+    extended_tools: bool | None = None,
+    account_repo: Any = None,
+) -> FastMCP:
+    """Build and configure the customer FastMCP server instance.
+
+    Resolves CustomerRepositoryPort and AccountRepositoryPort data providers based on
+    DATA_PROVIDER_MODE (MOCK vs SDK/non-mock) or pre-constructed repositories.
+    """
+    s = settings or Settings.from_env()
+    customer_provider: CustomerRepositoryPort = CustomerDataProviderFactory.get_customer_provider(
+        settings=s, repo=repo
+    )
+    account_provider: AccountRepositoryPort = CustomerDataProviderFactory.get_account_provider(
+        settings=s, repo=account_repo
+    )
+
+    if extended_tools is None:
+        extended_tools = os.environ.get("EXTENDED_CUSTOMER_TOOLS", "false").lower() == "true"
+
     mcp = FastMCP("customer-info", stateless_http=True, json_response=True)
-
-    @mcp.tool()
-    async def get_customer(customer_id: str) -> dict:
-        """Get a customer (name, tier) by id, e.g. C-1."""
-        require_role(ROLE)
-        customer = await repo.get(customer_id)
-        if customer is None:
-            raise NotFoundError(f"Customer {customer_id} not found")
-        return asdict(customer)
-
-    @mcp.tool()
-    async def search_customers(name: str) -> list[dict]:
-        """Search customers by (partial) name."""
-        require_role(ROLE)
-        return [asdict(c) for c in await repo.search(name)]
-
+    register_customer_tools(
+        mcp,
+        customer_provider,
+        account_provider=account_provider,
+        extended_tools=extended_tools,
+    )
     return mcp

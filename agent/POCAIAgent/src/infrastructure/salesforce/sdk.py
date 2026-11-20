@@ -23,9 +23,9 @@ def _like(value: str) -> str:
 
 
 class SalesforceSdkClient:
-    """Real adapter. `sf` is a simple_salesforce.Salesforce-compatible object (query_all).
+    """Salesforce SDK adapter implementing SalesforcePort.
 
-    Replace/extend with your own SDK; only the SalesforcePort contract matters.
+    Supports rag-platform-sdk (EdhConnector) as well as query_all-compatible objects.
     SOQL is built from validated identifiers and escaped literals (no string concatenation of user input).
     """
 
@@ -33,6 +33,10 @@ class SalesforceSdkClient:
         self._sf = sf
 
     async def _run(self, soql: str) -> list[dict[str, Any]]:
+        if hasattr(self._sf, "aquery"):
+            return await self._sf.aquery(soql)
+        if hasattr(self._sf, "query") and not hasattr(self._sf, "query_all"):
+            return await anyio.to_thread.run_sync(self._sf.query, soql)
         result = await anyio.to_thread.run_sync(self._sf.query_all, soql)
         return [{k: v for k, v in r.items() if k != "attributes"} for r in result["records"]]
 

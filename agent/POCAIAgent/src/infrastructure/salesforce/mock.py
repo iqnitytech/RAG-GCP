@@ -4,8 +4,8 @@ from typing import Any, Mapping, Sequence
 
 _DATA: dict[str, list[dict[str, Any]]] = {
     "Customer": [
-        {"Id": "C-1", "Name": "Acme Corp", "Tier": "Gold"},
-        {"Id": "C-2", "Name": "Globex Industries", "Tier": "Silver"},
+        {"Id": "C-1", "Name": "Acme Corp", "Tier": "Gold", "Phone": "+1-555-0101", "AccountNumber": "C-1", "Number": "1001"},
+        {"Id": "C-2", "Name": "Globex Industries", "Tier": "Silver", "Phone": "+1-555-0102", "AccountNumber": "C-2", "Number": "1002"},
     ],
     "Machine": [
         {"Id": "M-1", "Name": "CNC-100", "Status": "Running", "CustomerId": "C-1"},

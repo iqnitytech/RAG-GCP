@@ -22,6 +22,16 @@ class Settings:
     llm_timeout_s: float = 30.0
     routing: str = "hybrid"                 # keyword | skill | llm | hybrid (keyword -> skill -> llm)
     sf_mode: str = "mock"                   # mock | sdk
+    data_provider_mode: str = "mock"        # mock | sdk | live | real
+    sdk_api_key: str = ""
+    sdk_base_url: str = ""
+    sdk_tenant_id: str = ""
+    sdk_timeout_seconds: float = 30.0
+    sdk_max_retries: int = 3
+    sf_instance_url: str = ""
+    sf_client_id: str = ""
+    sf_client_secret: str = ""
+    sf_access_token: str = ""
     sf_username: str = ""
     sf_password: str = ""
     sf_security_token: str = ""
@@ -44,7 +54,19 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         def g(key: str, default: str) -> str:
-            return os.environ.get(key, default)
+            val = os.environ.get(key)
+            if val is None:
+                return default
+            val = val.strip()
+            # Strip inline comments (e.g. "value  # comment") if unquoted
+            if not ((val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'"))):
+                for sep in (" #", "\t#"):
+                    if sep in val:
+                        val = val.split(sep, 1)[0].strip()
+            # Strip enclosing quotes if present
+            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                val = val[1:-1].strip()
+            return val
 
         s = cls(
             env=g("APP_ENV", "local"),
@@ -62,6 +84,16 @@ class Settings:
             llm_timeout_s=float(g("LLM_TIMEOUT_S", "30")),
             routing=g("ROUTING", "hybrid"),
             sf_mode=g("SF_MODE", "mock"),
+            data_provider_mode=g("DATA_PROVIDER_MODE", g("SF_MODE", "mock")),
+            sdk_api_key=g("SDK_API_KEY", ""),
+            sdk_base_url=g("SDK_BASE_URL", ""),
+            sdk_tenant_id=g("SDK_TENANT_ID", ""),
+            sdk_timeout_seconds=float(g("SDK_TIMEOUT_SECONDS", "30")),
+            sdk_max_retries=int(g("SDK_MAX_RETRIES", "3")),
+            sf_instance_url=g("SF_INSTANCE_URL", ""),
+            sf_client_id=g("SF_CLIENT_ID", ""),
+            sf_client_secret=g("SF_CLIENT_SECRET", ""),
+            sf_access_token=g("SF_ACCESS_TOKEN", ""),
             sf_username=g("SF_USERNAME", ""),
             sf_password=g("SF_PASSWORD", ""),
             sf_security_token=g("SF_SECURITY_TOKEN", ""),
@@ -84,6 +116,12 @@ class Settings:
         )
         s.validate()
         return s
+
+    @property
+    def is_salesforce_configured(self) -> bool:
+        has_token = bool(self.sf_access_token.strip() and not self.sf_access_token.strip().lower().startswith("your-"))
+        has_oauth = bool(self.sf_instance_url and self.sf_client_id and self.sf_client_secret.strip())
+        return bool(self.sf_instance_url) and (has_token or has_oauth)
 
     def validate(self) -> None:
         if self.env == "prod":

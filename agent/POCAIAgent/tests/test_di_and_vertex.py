@@ -69,9 +69,28 @@ async def test_vertex_uses_a_model_per_role_and_survives_bad_json():
 
 def test_settings_models_and_credentials(monkeypatch):
     monkeypatch.setenv("VERTEX_MODEL_SYNTHESIS", "gemini-x")
+    monkeypatch.setenv("SKILL_MAX_STEPS", "5             # hard cap on skills chosen per question")
+    monkeypatch.setenv("AUTH_MODE", "dev   # dev | entra")
     s = Settings.from_env()
     assert s.vertex_model_synthesis == "gemini-x" and s.vertex_model_routing == "gemini-2.5-flash"
+    assert s.skill_max_steps == 5
+    assert s.auth_mode == "dev"
     with pytest.raises(RuntimeError):
         Settings(llm_mode="vertex").validate()
     Settings(llm_mode="vertex", vertex_project="p").validate()
     Settings(llm_mode="vertex", vertex_api_key="k").validate()
+
+
+def test_build_mcp_client_inprocess_with_url_endpoint():
+    from application.manifest import AgentManifest
+    from infrastructure.mcp.factory import build_mcp_client
+    from infrastructure.salesforce.mock import MockSalesforce
+
+    manifest = AgentManifest(
+        name="machine",
+        description="test",
+        transport="inprocess",
+        endpoint="http://localhost:8101/mcp",
+    )
+    client = build_mcp_client(manifest, Settings(), MockSalesforce())
+    assert client is not None

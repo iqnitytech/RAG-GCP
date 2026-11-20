@@ -109,7 +109,7 @@ async def test_firestore_store_roundtrip_and_agent_loading():
 
     skills, _ = make(auto=False, store=store)
     await skills.list_for(ADMIN)
-    assert len(store.list_by_status("pending")) == 6
+    assert len(store.list_by_status("pending")) == 7
     store.set_status("machine.get_machine", "approved")
     skills.invalidate()
     assert [s.id for s in await skills.list_for(ADMIN)] == ["machine.get_machine"]

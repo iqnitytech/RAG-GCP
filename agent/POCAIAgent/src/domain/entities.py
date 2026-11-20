@@ -19,6 +19,8 @@ class Customer:
     id: str
     name: str
     tier: str
+    phone: str = ""
+    number: str = ""
 
 
 @dataclass(frozen=True)

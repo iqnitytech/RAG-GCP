@@ -69,6 +69,16 @@ def test_admin_sees_everything(client):
     assert [a["name"] for a in r.json()] == ["customer"]
 
 
+def test_customer_details_numeric_and_account(client):
+    body = chat(client, "get customer details 2323").json()
+    assert "customer" in body["agents_used"]
+    assert "2323" in body["answer"]
+
+    body_acc = chat(client, "get account details ACC-1").json()
+    assert "customer" in body_acc["agents_used"]
+    assert "ACC-1" in body_acc["answer"]
+
+
 def test_validation(client):
     assert client.post("/chat", json={"message": ""}, headers=auth(ALL)).status_code == 422
     assert client.post("/chat", json={"message": "x" * 3000}, headers=auth(ALL)).status_code == 422

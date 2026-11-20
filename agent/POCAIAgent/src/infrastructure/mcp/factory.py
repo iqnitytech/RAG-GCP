@@ -13,7 +13,12 @@ def build_mcp_client(manifest: AgentManifest, settings: Settings, sf: Salesforce
     if manifest.transport == "inprocess":
         from mcp_servers.catalog import CATALOG
 
-        client: McpToolClient = InProcessMcpClient(CATALOG[manifest.endpoint](sf))
+        key = manifest.endpoint if manifest.endpoint in CATALOG else manifest.name
+        if key not in CATALOG:
+            raise KeyError(
+                f"MCP server '{key}' not found in CATALOG. Available: {list(CATALOG.keys())}"
+            )
+        client: McpToolClient = InProcessMcpClient(CATALOG[key](sf))
     elif manifest.transport == "streamable_http":
         client = HttpMcpClient(
             manifest.endpoint,

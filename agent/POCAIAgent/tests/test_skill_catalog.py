@@ -17,7 +17,7 @@ ADMIN = "Platform.Admin"
 
 def test_shipped_catalog_is_valid():
     catalog = load_skill_catalog(ROOT / "config" / "skills")
-    assert len(catalog) == 6 and catalog["telemetry.anomalies"].status == "approved"
+    assert len(catalog) == 7 and catalog["telemetry.anomalies"].status == "approved"
 
 
 def test_invalid_catalog_reports_every_problem(tmp_path):
